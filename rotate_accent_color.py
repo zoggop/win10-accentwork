@@ -8,13 +8,14 @@ from PIL import Image
 import random
 import math
 
-lightnessPoints = [83.8, 72.2, 61.4, 49.0, 36.7, 26.7, 13.9]
 maxChroma = 90
 randomMaxChroma = True
 minMaxChroma = 10
-setBackground = True
+setBackground = False
 backgroundHueAdd = 45
 backgroundLightness = 33
+
+lightnessPoints = [83.8, 72.2, 61.4, 49.0, 36.7, 26.7, 13.9]
 
 def twentyFourBitRGB(rgb):
 	floats = []
