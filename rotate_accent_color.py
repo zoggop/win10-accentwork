@@ -4,7 +4,6 @@ from winreg import *
 import coloraide
 import os
 import subprocess
-from PIL import Image
 import random
 import math
 
@@ -155,6 +154,7 @@ SetValueEx(key, "StartColorMenu", 0, REG_DWORD, startInt)
 CloseKey(key)
 
 if setBackground == True:
+	from PIL import Image
 	bgImg = Image.new('RGB', (1920,1080))
 	i = bgAC.interpolate(bgBC, space='lab-d65')
 	rawrows = [i(x/1080).coords() for x in range(1080)]
