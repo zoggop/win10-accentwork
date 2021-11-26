@@ -68,9 +68,17 @@ def intDwordColorToRGB(dwordInt):
 	b = int('0x' + reverse[4:6], 16)
 	return [r, g, b]
 
-def nextHueByDeltaE(lchColor, deltaEAdd):
+def nextHueByDeltaE(lchColor, deltaEAdd, negative):
 	for hueAdd in range(1, 180):
-		newC = highestChromaColor(lchColor.l, lchColor.h + hueAdd)
+		if negative == True:
+			newHue = lchColor.h - hueAdd
+			if newHue < 0:
+				newHue = newHue + 360
+		else:
+			newHue = lchColor.h + hueAdd
+			if newHue > 360:
+				newHue = newHue - 360
+		newC = highestChromaColor(lchColor.l, newHue)
 		deltaE = lchColor.delta_e(newC, method='2000')
 		if deltaE >= deltaEAdd:
 			return lchColor.h + hueAdd
@@ -86,16 +94,18 @@ arg = sys.argv[1]
 
 if arg[:1] == '+' or arg[:1] == '-':
 	deltaEAdd = int(arg[1:])
+	negative = False
 	if arg[:1] == '-':
-		deltaEAdd = 0 - deltaEAdd
+		negative = True
 	# get current accent color
 	key = OpenKey(HKEY_CURRENT_USER, r'SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Accent', 0, KEY_ALL_ACCESS)
 	val = QueryValueEx(key, "AccentColorMenu")
-	print('AccentColorMenu:', val[0])
 	rgbVal = intDwordColorToRGB(val[0])
 	lchC = rgb_to_lch(rgbVal[0], rgbVal[1], rgbVal[2])
-	hue = nextHueByDeltaE(lchC, deltaEAdd)
-	# hue = (lchC.h + deltaEAdd) % 360
+	if deltaEAdd == 0:
+		hue = lchC.h
+	else:
+		hue = nextHueByDeltaE(lchC, deltaEAdd, negative)
 else:
 	hue = float(arg)
 
