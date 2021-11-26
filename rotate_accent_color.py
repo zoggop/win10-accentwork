@@ -16,17 +16,6 @@ setBackground = True
 backgroundHueAdd = 45
 backgroundLightness = 33
 
-def upscaleRGB(rgb):
-	error = 0
-	newRGB = []
-	for component in rgb:
-		unrounded = min(1,max(0,component))*255
-		byte = round(unrounded)
-		e = abs(unrounded - byte)
-		error = error + e
-		newRGB.append(byte)
-	return tuple(newRGB), error
-
 def twentyFourBitRGB(rgb):
 	floats = []
 	for component in rgb:
