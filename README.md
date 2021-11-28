@@ -5,7 +5,7 @@ where 21 is the deltaE color difference between the new accent color and the cur
 
 ## More Information:
 
-There are some settings at the top of the script. By default, a random maximum chroma between 10 and 90 will be chosen, but this can be turned off so that the chosen maximum chroma is always used (currently 90).
+There are some settings at the top of the script. By default, a random maximum chroma between 5 and 134 will be chosen, but this can be turned off so that the maximum chroma is always 134 (the maximum possible). The range of possible maximum chroma can be changed.
 
 ## Dependencies:
 Python module: coloraide

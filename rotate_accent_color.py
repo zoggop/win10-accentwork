@@ -6,9 +6,9 @@ import os
 import random
 import math
 
-maxChroma = 90 # pure blue has chroma of 133.81
+maxChroma = 134 # pure blue has chroma of 133.81
 randomMaxChroma = True
-minMaxChroma = 10
+minMaxChroma = 5
 
 def lch_to_rgb(lightness, chroma, hue):
 	c = coloraide.Color('lch-d65', [lightness, chroma, hue]).convert('srgb')
