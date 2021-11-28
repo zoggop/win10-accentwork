@@ -6,8 +6,8 @@ import os
 import random
 import math
 
-maxChroma = 134 # pure blue has chroma of 133.81
-randomMaxChroma = False
+maxChroma = 90 # pure blue has chroma of 133.81
+randomMaxChroma = True
 minMaxChroma = 10
 
 def lch_to_rgb(lightness, chroma, hue):
