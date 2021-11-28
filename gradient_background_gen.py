@@ -7,8 +7,15 @@ import subprocess
 import random
 import math
 
+from scipy.spatial import KDTree
+from webcolors import (
+    CSS3_HEX_TO_NAMES,
+    hex_to_rgb,
+)
+
 backgroundLightness = 33
 backgroundHueAdd = 45
+maxChroma = 90
 
 def twentyFourBitRGB(rgb):
 	floats = []
@@ -50,12 +57,37 @@ def highestChromaColor(lightness, hue):
 		if not c is None:
 			return c
 
+def hexToIntDwordColor(hexString):
+	convertable = '0xff' + hexString[4:] + hexString[2:4] + hexString[:2]
+	return int(convertable, 16)
+
+def intDwordColorToRGB(dwordInt):
+	reverse = hex(dwordInt)
+	r = int('0x' + reverse[8:], 16)
+	g = int('0x' + reverse[6:8], 16)
+	b = int('0x' + reverse[4:6], 16)
+	return [r, g, b]
+
+def convert_rgb_to_names(rgb_tuple):
+	# a dictionary of all the hex and their respective names in css3
+	css3_db = CSS3_HEX_TO_NAMES
+	names = []
+	rgb_values = []
+	for color_hex, color_name in css3_db.items():
+		names.append(color_name)
+		rgb_values.append(hex_to_rgb(color_hex))
+	kdt_db = KDTree(rgb_values)
+	distance, index = kdt_db.query(rgb_tuple)
+	return names[index]
+
 # get current accent color hue
 key = OpenKey(HKEY_CURRENT_USER, r'SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Accent', 0, KEY_ALL_ACCESS)
 val = QueryValueEx(key, "AccentColorMenu")
 rgbVal = intDwordColorToRGB(val[0])
 lchC = rgb_to_lch(rgbVal[0], rgbVal[1], rgbVal[2])
 hue = lchC.h
+maxChroma = int(lchC.c)
+print(lchC.convert('srgb').to_string(hex=True, upper=True), convert_rgb_to_names((rgbVal[0], rgbVal[1], rgbVal[2])))
 
 bgAHue = (hue - backgroundHueAdd) % 360
 bgBHue = (hue + backgroundHueAdd) % 360
@@ -66,10 +98,12 @@ bgChroma = min(bgAC.convert('lch-d65').c, bgBC.convert('lch-d65').c)
 print("background chroma", bgChroma)
 bgAC = lch_to_rgb(backgroundLightness, bgChroma, bgAHue)
 bgBC = lch_to_rgb(backgroundLightness, bgChroma, bgBHue)
+print(convert_rgb_to_names((int(bgAC.r*255), int(bgAC.g*255), int(bgAC.b*255))))
+print(convert_rgb_to_names((int(bgBC.r*255), int(bgBC.g*255), int(bgBC.b*255))))
 
 from PIL import Image
 bgImg = Image.new('RGB', (1920,1080))
-i = bgAC.interpolate(bgBC, space='lab-d65')
+i = bgAC.interpolate(bgBC, space='lch-d65')
 rawrows = [i(x/1080).coords() for x in range(1080)]
 rows = []
 for row in rawrows:

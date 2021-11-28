@@ -6,11 +6,9 @@ import os
 import random
 import math
 
-maxChroma = 90
-randomMaxChroma = True
+maxChroma = 134 # pure blue has chroma of 133.81
+randomMaxChroma = False
 minMaxChroma = 10
-
-lightnessPoints = [83.8, 72.2, 61.4, 49.0, 36.7, 26.7, 13.9]
 
 def lch_to_rgb(lightness, chroma, hue):
 	c = coloraide.Color('lch-d65', [lightness, chroma, hue]).convert('srgb')
@@ -28,7 +26,20 @@ def highestChromaColor(lightness, hue):
 	for chroma in range(maxChroma, 0, -1):
 		c = lch_to_rgb(lightness, chroma, hue)
 		if not c is None:
-			return c
+			if chroma < maxChroma:
+				decaChroma = chroma + 0.9
+				while decaChroma >= chroma:
+					dc = lch_to_rgb(lightness, decaChroma, hue)
+					if not dc is None:
+						centiChroma = decaChroma + 0.09
+						while centiChroma >= decaChroma:
+							cc = lch_to_rgb(lightness, centiChroma, hue)
+							if not cc is None:
+								return cc
+							centiChroma -= 0.01
+					decaChroma -= 0.1
+			else:
+				return c
 
 def hexToIntDwordColor(hexString):
 	convertable = '0xff' + hexString[4:] + hexString[2:4] + hexString[:2]
@@ -55,6 +66,17 @@ def nextHueByDeltaE(lchColor, deltaEAdd, negative):
 		deltaE = lchColor.delta_e(newC, method='2000')
 		if deltaE >= deltaEAdd:
 			return lchColor.h + hueAdd
+
+# lightnessPoints = [84.2, 72.7, 62.1, 49.9, 37.4, 27.2, 14.3]
+lightnessMin = 15
+lightnessMax = 85
+l = lightnessMax
+lStep = (lightnessMax - lightnessMin) / 6
+lightnessPoints = []
+for n in range(0, 7):
+	lightnessPoints.append(l)
+	l = l - lStep
+# print(lightnessPoints)
 
 hue = 0
 if randomMaxChroma == True:
@@ -90,6 +112,7 @@ startDT = datetime.datetime.now()
 for lightness in lightnessPoints:
 	rgbC = highestChromaColor(lightness, hue)
 	hs = rgbC.to_string(hex=True)[1:]
+	print(hs, 'chroma:', rgbC.convert('lch-d65').c)
 	hexStrings.append(hs)
 weirdHue = ((hue + 180) % 360) + 1
 weirdRGBC = highestChromaColor(50, weirdHue)
