@@ -104,7 +104,7 @@ if arg[:1] == '+' or arg[:1] == '-':
 else:
 	hue = float(arg)
 
-print('hue:', hue)
+print('hue:', '{:.2f}'.format(hue))
 
 hexStrings = []
 
@@ -112,7 +112,7 @@ startDT = datetime.datetime.now()
 for lightness in lightnessPoints:
 	rgbC = highestChromaColor(lightness, hue)
 	hs = rgbC.to_string(hex=True)[1:]
-	print(hs, 'chroma:', rgbC.convert('lch-d65').c)
+	print(hs, 'lightness:', '{:.2f}'.format(lightness), 'chroma:', '{:.2f}'.format(rgbC.convert('lch-d65').c))
 	hexStrings.append(hs)
 weirdHue = ((hue + 180) % 360) + 1
 weirdRGBC = highestChromaColor(50, weirdHue)
