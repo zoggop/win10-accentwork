@@ -16,9 +16,12 @@ import pycountry
 
 backgroundLightnessA = 25
 backgroundLightnessB = 75
-backgroundHueAdd = 120
-maxChroma = 134
-avoidOcean = True
+backgroundDeltaE = 65 # the desired delta e color difference between the two background colors
+useRandomHue = True # instead of the accent color, pick a random hue
+useAccentMaxChroma = False # limit chroma to the accent color
+appropriateHues = False # use the hue that fits better for being light or dark (blues for darks, yellows for lights, etc)
+maxChroma = 134 # maximum chroma (if not using the accent color's maximum chroma)
+minShades = 15 # how many shades of grey must be in the test tile to be accepted
 
 # smurl = r"http://a.tile.openstreetmap.org/{0}/{1}/{2}.png"
 smurl = r"http://services.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{0}/{2}/{1}"
@@ -98,7 +101,7 @@ def imgHasContrast(bwT):
 				lVals[l] = True
 	contrast = lMax - lMin
 	print("contrast:", contrast, "shades:", lCount)
-	return contrast > 10 and lCount > 10 and not (contrast == 153 and lCount == 65)
+	return lCount > minShades and not (contrast == 153 and lCount == 65)
 
 def manualGrade(bwImage, interpolation):
 	grade = [(int(interpolation(l/255).red * 255), int(interpolation(l/255).green * 255), int(interpolation(l/255).blue * 255)) for l in range(256)]
@@ -152,10 +155,11 @@ def getImageCluster(lat_deg, lon_deg, xTileNum, yTileNum, zoom):
 	CurrentZoom = zoom
 	# test the corners for image data (make sure we're not in the ocean)
 	tests = [
-		{'x':xmin, 'y':ymin},
-		{'x':xmax, 'y':ymin},
-		{'x':xmin, 'y':ymax},
-		{'x':xmax, 'y':ymax},
+		# {'x':xmin, 'y':ymin},
+		# {'x':xmax, 'y':ymin},
+		# {'x':xmin, 'y':ymax},
+		# {'x':xmax, 'y':ymax},
+		{'x':centerX, 'y':centerY}
 	]
 	with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
 		executor.map(getOneTile, tests)
@@ -181,6 +185,30 @@ def getImageCluster(lat_deg, lon_deg, xTileNum, yTileNum, zoom):
 			return None
 		Cluster.paste(img, box=((xtile-xmin)*256 ,  (ytile-ymin)*255))
 	return Cluster
+
+def findColorPairByDeltaE(startHue, deltaE, lightnessA, lightnessB):
+	highestDE, highestPair = None, None
+	for hAdd in range(1, 180):
+		hA = (startHue - hAdd) % 360
+		hB = (startHue + hAdd) % 360
+		lAhA = highestChromaColor(lightnessA, hA)
+		lBhB = highestChromaColor(lightnessB, hB)
+		lAhB = highestChromaColor(lightnessA, hB)
+		lBhA = highestChromaColor(lightnessB, hA)
+		if (appropriateHues and (lAhB.convert('lch-d65').c + lBhA.convert('lch-d65').c) > (lAhA.convert('lch-d65').c + lBhB.convert('lch-d65').c)) or (not appropriateHues and random.randint(0,1) == 1):
+			a = lAhB
+			b = lBhA
+		else:
+			a = lAhA
+			b = lBhB
+		de = a.delta_e(b, method='2000')
+		if de >= deltaE:
+			print(hA, hB, abs(hB - hA))
+			return a, b
+		if highestDE == None or de > highestDE:
+			highestDE = de
+			highestPair = [a, b]
+	return highestPair[0], highestPair[1]
 
 def locationName(latLon):
 	for provider in ['arcgis', 'osm', 'geocodefarm']:
@@ -233,17 +261,13 @@ if __name__ == '__main__':
 	
 	attemptNum = 0
 	a = None
-	place = None
-	while (a is None or place is None or (place != None and avoidOcean and 'ocean' in place.lower())) and attemptNum < 50:
+	while a is None and attemptNum < 50:
 		centerLatLon = (random.randrange(-9000, 9000) / 100, random.randrange(-18000, 18000) / 100)
 		a = getImageCluster(centerLatLon[0], centerLatLon[1], 8, 5, 11)
-		if a != None:
-			place = locationName(centerLatLon)
 		print(centerLatLon, a)
 		attemptNum += 1
 	if attemptNum == 50:
 		exit()
-	print(place)
 
 	# bw = contrasted.convert('L')
 	bw = ImageOps.equalize(a)
@@ -254,31 +278,22 @@ if __name__ == '__main__':
 	# eq.save(os.path.expanduser('~/Desktop/eq.png'))
 	bw.save(os.path.expanduser('~/Desktop/bw.png'))
 
-	# get current accent color hue
-	key = OpenKey(HKEY_CURRENT_USER, r'SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Accent', 0, KEY_ALL_ACCESS)
-	val = QueryValueEx(key, "AccentColorMenu")
-	rgbVal = intDwordColorToRGB(val[0])
-	lchC = rgb_to_lch(rgbVal[0], rgbVal[1], rgbVal[2])
-	hue = lchC.h
-	maxChroma = int(lchC.c)
-
-	bgAHue = (hue - backgroundHueAdd) % 360
-	bgBHue = (hue + backgroundHueAdd) % 360
-	print("background hues", bgAHue, bgBHue)
-	lAhA = highestChromaColor(backgroundLightnessA, bgAHue)
-	lBhB = highestChromaColor(backgroundLightnessB, bgBHue)
-	lAhB = highestChromaColor(backgroundLightnessA, bgBHue)
-	lBhA = highestChromaColor(backgroundLightnessB, bgAHue)
-	print(lAhA.convert('lch-d65').c, lAhB.convert('lch-d65').c)
-	print(lBhB.convert('lch-d65').c, lBhA.convert('lch-d65').c)
-	print((lAhA.convert('lch-d65').c + lBhB.convert('lch-d65').c), (lAhB.convert('lch-d65').c + lBhA.convert('lch-d65').c))
-	if (lAhB.convert('lch-d65').c + lBhA.convert('lch-d65').c) > (lAhA.convert('lch-d65').c + lBhB.convert('lch-d65').c):
-		bgAC = lAhB
-		bgBC = lBhA
+	if useRandomHue:
+		hue = random.randint(0, 359)
 	else:
-		bgAC = lAhA
-		bgBC = lBhB
+		# get current accent color hue
+		key = OpenKey(HKEY_CURRENT_USER, r'SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Accent', 0, KEY_ALL_ACCESS)
+		val = QueryValueEx(key, "AccentColorMenu")
+		rgbVal = intDwordColorToRGB(val[0])
+		lchC = rgb_to_lch(rgbVal[0], rgbVal[1], rgbVal[2])
+		hue = lchC.h
+		if useAccentMaxChroma:
+			maxChroma = int(lchC.c)
+	print('hue', hue)
 
+	bgAC, bgBC = findColorPairByDeltaE(hue, backgroundDeltaE, backgroundLightnessA, backgroundLightnessB)
+
+	print("delta e", bgAC.delta_e(bgBC, method='2000'))
 	i = bgAC.interpolate(bgBC, space='lch-d65')
 
 	# startDT = datetime.datetime.now()
@@ -298,6 +313,8 @@ if __name__ == '__main__':
 	if not os.path.exists(os.path.expanduser('~/Pictures/autowalls')):
 		os.makedirs(os.path.expanduser('~/Pictures/autowalls'))
 	manually.save(os.path.expanduser('~/Pictures/autowalls/topobg.png'), format='PNG')
+	place = locationName(centerLatLon)
+	print(place)
 	fp = open(os.path.expanduser('~/Pictures/autowalls/topobg_location.txt'), 'w')
 	fp.write(place)
 	fp.close()
