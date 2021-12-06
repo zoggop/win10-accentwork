@@ -13,6 +13,7 @@ import datetime
 import concurrent.futures
 import geocoder
 import pycountry
+import numpy as np
 
 backgroundLightnessA = 25
 backgroundLightnessB = 75
@@ -23,11 +24,19 @@ backgroundDeltaE = 35 # the desired delta e color difference between the two bac
 useRandomHue = True # instead of the accent color, pick a random hue
 useAccentMaxChroma = False # limit chroma to the accent color
 maxChroma = 134 # maximum chroma (if not using the accent color's maximum chroma)
-minShades = 15 # how many shades of grey must be in the test tile to be accepted
+minShades = 20 # how many shades of grey must be in the test tile to be accepted
 
 # smurl = r"http://a.tile.openstreetmap.org/{0}/{1}/{2}.png"
 smurl = r"http://services.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{0}/{2}/{1}"
 CurrentZoom = None
+
+degreesPerZ = 90 / (math.pi / 2)
+
+def uniformlyRandomLatLon():
+	z = random.randint(-10000000, 10000000) / 10000000
+	lat = math.asin(z) * degreesPerZ
+	lon = random.randint(-18000000, 18000000) / 100000
+	return lat, lon
 
 def angleDist(a, b):
 	return abs(((b - a) + 180) % 360 - 180)
@@ -106,7 +115,7 @@ def imgHasContrast(bwT):
 				lVals[l] = True
 	contrast = lMax - lMin
 	print("contrast:", contrast, "shades:", lCount)
-	return lCount > minShades and not (contrast == 153 and lCount == 65)
+	return lCount > minShades and not (contrast == 153 and lCount == 65) # contrast 153 with 65 shades is the "tile not available" tile
 
 def manualGrade(bwImage, interpolation):
 	grade = [(int(interpolation(l/255).red * 255), int(interpolation(l/255).green * 255), int(interpolation(l/255).blue * 255)) for l in range(256)]
@@ -264,12 +273,16 @@ def locationName(latLon):
 			if output != None and output != '':
 				return output
 
+
 if __name__ == '__main__':
-	
+
 	attemptNum = 0
 	a = None
 	while a is None and attemptNum < 50:
-		centerLatLon = (random.randrange(-9000, 9000) / 100, random.randrange(-18000, 18000) / 100)
+		# centerLatLon = (random.randrange(-9000, 9000) / 100, random.randrange(-18000, 18000) / 100)
+		# lat, lon = num2deg(random.randint(0,1048576), random.randint(0,1048576), 20)
+		lat, lon = uniformlyRandomLatLon()
+		centerLatLon = [lat, lon]
 		zooms = [*range(10, 14)]
 		while len(zooms) != 0:
 			zoom = zooms.pop(random.randrange(len(zooms)))
