@@ -18,11 +18,11 @@ import numpy as np
 backgroundLightnessA = 25
 backgroundLightnessB = 75
 randomBackgroundLightness = True
-minBackgroundLightnessA = 10
+minBackgroundLightnessA = 17
 maxBackgroundLightnessA = 33
 backgroundDeltaE = 35 # the desired delta e color difference between the two background hues
-useRandomHue = True # instead of the accent color, pick a random hue
-useAccentMaxChroma = False # limit chroma to the accent color
+useRandomHue = False # instead of the accent color, pick a random hue
+useAccentMaxChroma = True # limit chroma to the accent color
 maxChroma = 134 # maximum chroma (if not using the accent color's maximum chroma)
 minShades = 24 # how many shades of grey must be in the test tile to be accepted
 
@@ -98,27 +98,14 @@ def num2deg(xtile, ytile, zoom):
   return (lat_deg, lon_deg)
 
 def imgHasContrast(bwT):
-	# print(tile.size[0], tile.size[1])
-	# bwT.convert('L')
-	lMin, lMax = None, None
-	lVals = {}
-	lCount = 0
-	for x in range(0, bwT.size[0]):
-		for y in range(0, bwT.size[1]):
-			l = bwT.getpixel((x, y))
-			if lMin == None or l < lMin:
-				lMin = l
-			if lMax == None or l > lMax:
-				lMax = l
-			if lVals.get(l) == None:
-				lCount += 1
-				lVals[l] = True
-	contrast = lMax - lMin
-	print("contrast:", contrast, "shades:", lCount)
-	if contrast == 153 and lCount == 65:
+	colors = bwT.getcolors()
+	shades = len(colors)
+	contrast = colors[-1][1] - colors[0][1]
+	print("contrast:", contrast, "shades:", shades)
+	if contrast == 153 and shades == 65:
 		return None # contrast 153 with 65 shades is the "tile not available" tile
 	else:
-		if lCount < minShades:
+		if shades < minShades:
 			return False
 		else:
 			return True
@@ -127,9 +114,10 @@ def manualGrade(bwImage, interpolation):
 	grade = [(int(interpolation(l/255).red * 255), int(interpolation(l/255).green * 255), int(interpolation(l/255).blue * 255)) for l in range(256)]
 	print(grade[0], grade[127], grade[255])
 	colorImage = Image.new('RGB', bwImage.size)
+	px = bwImage.load()
 	for x in range(0, bwImage.size[0]):
 		for y in range(0, bwImage.size[1]):
-			l = bwImage.getpixel((x, y))
+			l = px[x, y]
 			colorImage.putpixel((x, y), grade[l])
 	return colorImage
 
@@ -339,12 +327,12 @@ if __name__ == '__main__':
 
 	# startDT = datetime.datetime.now()
 	# grade = [(int(i(l/2).red * 255), int(i(l/2).green * 255), int(i(l/2).blue * 255)) for l in range(3)]
-	# colorized = ImageOps.colorize(bw, grade[0], grade[2], grade[1])
+	# colorized = ImageOps.colorize(bw, grade[0], grade[2], mid=grade[1])
 	# print(datetime.datetime.now() - startDT, "done PIL colorizing")
 	startDT = datetime.datetime.now()
 	manually = manualGrade(bw, i)
 	print(datetime.datetime.now() - startDT, "done manually colorizing")
-	# colorized.save(os.path.expanduser('~/Desktop/colorized.png'))
+	# colorized.save(os.path.expanduser('~/Desktop/pil.png'))
 	manually.save(os.path.expanduser('~/Desktop/manually.png'))
 
 	fitted = ImageOps.fit(manually, (1920,1080))
