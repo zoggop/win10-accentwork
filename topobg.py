@@ -16,16 +16,18 @@ import pycountry
 
 backgroundLightnessA = 25
 backgroundLightnessB = 75
-backgroundDeltaE = 65 # the desired delta e color difference between the two background colors
+backgroundDeltaE = 35 # the desired delta e color difference between the two background hues
 useRandomHue = True # instead of the accent color, pick a random hue
 useAccentMaxChroma = False # limit chroma to the accent color
-appropriateHues = False # use the hue that fits better for being light or dark (blues for darks, yellows for lights, etc)
 maxChroma = 134 # maximum chroma (if not using the accent color's maximum chroma)
 minShades = 15 # how many shades of grey must be in the test tile to be accepted
 
 # smurl = r"http://a.tile.openstreetmap.org/{0}/{1}/{2}.png"
 smurl = r"http://services.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{0}/{2}/{1}"
 CurrentZoom = None
+
+def angleDist(a, b):
+	return abs(((b - a) + 180) % 360 - 180)
 
 def lch_to_rgb(lightness, chroma, hue):
 	c = coloraide.Color('lch-d65', [lightness, chroma, hue]).convert('srgb')
@@ -186,29 +188,41 @@ def getImageCluster(lat_deg, lon_deg, xTileNum, yTileNum, zoom):
 		Cluster.paste(img, box=((xtile-xmin)*256 ,  (ytile-ymin)*255))
 	return Cluster
 
+def hueSwapMaybe(lightnessA, hueA, lightnessB, hueB):
+	lAhA = highestChromaColor(lightnessA, hueA)
+	lBhB = highestChromaColor(lightnessB, hueB)
+	lAhB = highestChromaColor(lightnessA, hueB)
+	lBhA = highestChromaColor(lightnessB, hueA)
+	if random.randint(0,1) == 1:
+		print("straight hues")
+		a = lAhB
+		b = lBhA
+	else:
+		print("swapped hues")
+		a = lAhA
+		b = lBhB
+	return a, b
+
 def findColorPairByDeltaE(startHue, deltaE, lightnessA, lightnessB):
-	highestDE, highestPair = None, None
+	testLightness = (lightnessA + lightnessB) / 2
+	highestDE, highestHues = None, None
 	for hAdd in range(1, 180):
 		hA = (startHue - hAdd) % 360
 		hB = (startHue + hAdd) % 360
-		lAhA = highestChromaColor(lightnessA, hA)
-		lBhB = highestChromaColor(lightnessB, hB)
-		lAhB = highestChromaColor(lightnessA, hB)
-		lBhA = highestChromaColor(lightnessB, hA)
-		if (appropriateHues and (lAhB.convert('lch-d65').c + lBhA.convert('lch-d65').c) > (lAhA.convert('lch-d65').c + lBhB.convert('lch-d65').c)) or (not appropriateHues and random.randint(0,1) == 1):
-			a = lAhB
-			b = lBhA
-		else:
-			a = lAhA
-			b = lBhB
-		de = a.delta_e(b, method='2000')
+		testA = highestChromaColor(testLightness, hA)
+		testB = highestChromaColor(testLightness, hB)
+		chroma = min(testA.convert('lch-d65').c, testB.convert('lch-d65').c)
+		testA = lch_to_rgb(testLightness, chroma, hA)
+		testB = lch_to_rgb(testLightness, chroma, hB)
+		de = testA.delta_e(testB, method='2000')
 		if de >= deltaE:
-			print(hA, hB, abs(hB - hA))
-			return a, b
+			highestHues = [hA, hB]
+			break
 		if highestDE == None or de > highestDE:
 			highestDE = de
-			highestPair = [a, b]
-	return highestPair[0], highestPair[1]
+			highestHues = [hA, hB]
+	print(highestHues, angleDist(highestHues[0], highestHues[1]))
+	return hueSwapMaybe(lightnessA, highestHues[0], lightnessB, highestHues[1])
 
 def locationName(latLon):
 	for provider in ['arcgis', 'osm', 'geocodefarm']:
@@ -263,7 +277,13 @@ if __name__ == '__main__':
 	a = None
 	while a is None and attemptNum < 50:
 		centerLatLon = (random.randrange(-9000, 9000) / 100, random.randrange(-18000, 18000) / 100)
-		a = getImageCluster(centerLatLon[0], centerLatLon[1], 8, 5, 11)
+		zooms = [*range(10, 14)]
+		while len(zooms) != 0:
+			zoom = zooms.pop(random.randrange(len(zooms)))
+			a = getImageCluster(centerLatLon[0], centerLatLon[1], 8, 5, zoom)
+			if not a is None:
+				print("zoom:", zoom)
+				break
 		print(centerLatLon, a)
 		attemptNum += 1
 	if attemptNum == 50:
@@ -292,6 +312,9 @@ if __name__ == '__main__':
 	print('hue', hue)
 
 	bgAC, bgBC = findColorPairByDeltaE(hue, backgroundDeltaE, backgroundLightnessA, backgroundLightnessB)
+	# bgAC, bgBC = colorPairByHueDiff(hue, backgroundHueDiff, backgroundLightnessA, backgroundLightnessB)
+	print(bgAC.convert('lch-d65'))
+	print(bgBC.convert('lch-d65'))
 
 	print("delta e", bgAC.delta_e(bgBC, method='2000'))
 	i = bgAC.interpolate(bgBC, space='lch-d65')
