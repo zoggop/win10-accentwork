@@ -35,6 +35,13 @@ CurrentGrade = None
 
 degreesPerZ = 90 / (math.pi / 2)
 
+locStruct = [
+		['city', 'locality', 'municipality', 'town', 'village'],
+		['county', 'admin_2', 'subregion'],
+		['state', 'admin_1', 'region', 'territory'],
+		['country'],
+		['longlabel', 'match_addr', 'address']] # fallbacks
+
 def uniformlyRandomLatLon():
 	z = random.randint(-10000000, 10000000) / 10000000
 	lat = math.asin(z) * degreesPerZ
@@ -234,7 +241,43 @@ def findColorPairByDeltaE(startHue, deltaE, lightnessA, lightnessB):
 	print(highestHues, angleDist(highestHues[0], highestHues[1]))
 	return hueSwapMaybe(lightnessA, highestHues[0], lightnessB, highestHues[1])
 
+def latinOnly(st):
+	if st is None:
+		print("st is None")
+		return False
+	try:
+		st.encode('latin1')
+	except UnicodeEncodeError:
+		return False
+	return True
+
+def nameFromData(s):
+	output = ''
+	if s.get('country') == None and s.get('countrycode') != None:
+		s['country'] = pycountry.countries.get(alpha_3=s.get('countrycode')).name
+	strings = {}
+	l = 0
+	for level in locStruct:
+		l += 1
+		if l == 5 and output != '':
+			break
+		for k in level:
+			v = s.get(k)
+			if not v is None and v != '':
+				if strings.get(v) is None:
+					if l > 1:
+						output = output + ', '
+					output = output + v
+					strings[v] = True
+					break
+	if output == '':
+		return None
+	else:
+		return output
+
 def locationName(latLon):
+	s = {}
+	latinS = {}
 	for provider in ['arcgis', 'osm', 'geocodefarm']:
 		func = getattr(geocoder, provider)
 		try:
@@ -242,44 +285,27 @@ def locationName(latLon):
 		except:
 			print("could not get location with", provider)
 		finally:
-			output = g.address
-			s = {'address':g.address}
-			print(provider)
+			if latinOnly(g.address) and latinS.get('address') is None:
+				latinS['address'] = g.address
+			if s.get('address') is None:
+				s['address'] = g.address
+			# print(provider)
 			if g.raw != None:
-				address = g.raw.get('address') or g.raw.get('ADDRESS')
-				if address != None:
+				a = g.raw.get('address') or g.raw.get('ADDRESS')
+				if a != None:
+					address = {}
+					for k in a.keys():
+						address[k.lower()] = a.get(k)
 					# print(address)
-					for k in ['county', 'state', 'country', 'County', 'State', 'Country', 'CountryCode', 'Region', 'Subregion', 'LongLabel', 'Match_addr', 'admin_2', 'admin_1', ]:
-						v = address.get(k)
-						if v != None and v != '':
-							# print(k.upper(), v)
-							s[k.lower()] = v
-			if s.get('country') == None and s.get('countrycode') != None:
-				s['country'] = pycountry.countries.get(alpha_3=s.get('countrycode')).name
-			if s.get('county') and s.get('state') and s.get('country'):
-				output = '{}, {}, {}'.format(s.get('county'), s.get('state'), s.get('country'))
-			elif s.get('subregion') and s.get('region') and s.get('country'):
-				output = '{}, {}, {}'.format(s.get('subregion'), s.get('region'), s.get('country'))
-			elif s.get('admin_2') and s.get('admin_1') and s.get('country'):
-				output = '{}, {}, {}'.format(s.get('admin_2'), s.get('admin_1'), s.get('country'))
-			elif s.get('state') and s.get('country'):
-				output = '{}, {}'.format(s.get('state'), s.get('country'))
-			elif s.get('region') and s.get('country'):
-				output = '{}, {}'.format(s.get('region'), s.get('country'))
-			elif s.get('admin_1') and s.get('country'):
-				output = '{}, {}'.format(s.get('admin_1'), s.get('country'))
-			elif s.get('county') and s.get('country'):
-				output = '{}, {}'.format(s.get('county'), s.get('country'))
-			elif s.get('subregion') and s.get('country'):
-				output = '{}, {}'.format(s.get('subregion'), s.get('country'))
-			elif s.get('admin_2') and s.get('country'):
-				output = '{}, {}'.format(s.get('admin_2'), s.get('country'))
-			elif s.get('longlabel'):
-				output = s.get('longlabel')
-			elif s.get('match_addr'):
-				output = s.get('match_addr')
-			if output != None and output != '':
-				return output
+					for level in locStruct:
+						for k in level:
+							v = address.get(k)
+							if not v is None and v != '':
+								if s.get(k) is None:
+									s[k] = v
+								if latinS.get(k) is None and latinOnly(v):
+									latinS[k] = v
+	return nameFromData(s), nameFromData(latinS)
 
 
 if __name__ == '__main__':
@@ -294,12 +320,16 @@ if __name__ == '__main__':
 	widthInTiles = math.ceil((maxWidth + 1) / 256)
 	heightInTiles = math.ceil((maxHeight + 1) / 256)
 
+
 	attemptNum = 0
 	a = None
 	while not a and attemptNum < 50:
 		# centerLatLon = (random.randrange(-9000, 9000) / 100, random.randrange(-18000, 18000) / 100)
 		# lat, lon = num2deg(random.randint(0,1048576), random.randint(0,1048576), 20)
-		lat, lon = uniformlyRandomLatLon()
+		if attemptNum == 0 and len(sys.argv) == 3:
+			lat, lon = float(sys.argv[1]), float(sys.argv[2])
+		else:
+			lat, lon = uniformlyRandomLatLon()
 		centerLatLon = [lat, lon]
 		zooms = [*range(minZoom, maxZoom+1)]
 		while len(zooms) != 0:
@@ -357,16 +387,17 @@ if __name__ == '__main__':
 	if not os.path.exists(os.path.expanduser('~/Pictures/autowalls')):
 		os.makedirs(os.path.expanduser('~/Pictures/autowalls'))
 	colorized.save(os.path.expanduser('~/Pictures/autowalls/topobg.png'), format='PNG')
-	place = locationName(centerLatLon)
-	print(place)
-	fp = open(os.path.expanduser('~/Pictures/autowalls/topobg_location.txt'), 'w')
-	fp.write(place)
+	name, latinName = locationName(centerLatLon)
+	print(name)
+	print(latinName)
+	fp = open(os.path.expanduser('~/Pictures/autowalls/topobg_location.txt'), 'w', encoding='utf8')
+	fp.write(name + "\n" + latinName)
 	fp.close()
 	keyVal = r'Control Panel\Desktop'
 	try:
-	    key = OpenKey(HKEY_CURRENT_USER, keyVal, 0, KEY_ALL_ACCESS)
+		key = OpenKey(HKEY_CURRENT_USER, keyVal, 0, KEY_ALL_ACCESS)
 	except:
-	    key = CreateKey(HKEY_CURRENT_USER, keyVal)
+		key = CreateKey(HKEY_CURRENT_USER, keyVal)
 	SetValueEx(key, "Wallpaper", 0, REG_SZ, os.path.expanduser('~/Pictures/autowalls/topobg.png'))
 	CloseKey(key)
 	subprocess.run(['rundll32.exe', 'user32.dll,', 'UpdatePerUserSystemParameters'])
