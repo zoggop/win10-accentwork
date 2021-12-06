@@ -24,7 +24,7 @@ backgroundDeltaE = 35 # the desired delta e color difference between the two bac
 useRandomHue = True # instead of the accent color, pick a random hue
 useAccentMaxChroma = False # limit chroma to the accent color
 maxChroma = 134 # maximum chroma (if not using the accent color's maximum chroma)
-minShades = 20 # how many shades of grey must be in the test tile to be accepted
+minShades = 24 # how many shades of grey must be in the test tile to be accepted
 
 # smurl = r"http://a.tile.openstreetmap.org/{0}/{1}/{2}.png"
 smurl = r"http://services.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{0}/{2}/{1}"
@@ -115,7 +115,13 @@ def imgHasContrast(bwT):
 				lVals[l] = True
 	contrast = lMax - lMin
 	print("contrast:", contrast, "shades:", lCount)
-	return lCount > minShades and not (contrast == 153 and lCount == 65) # contrast 153 with 65 shades is the "tile not available" tile
+	if contrast == 153 and lCount == 65:
+		return None # contrast 153 with 65 shades is the "tile not available" tile
+	else:
+		if lCount < minShades:
+			return False
+		else:
+			return True
 
 def manualGrade(bwImage, interpolation):
 	grade = [(int(interpolation(l/255).red * 255), int(interpolation(l/255).green * 255), int(interpolation(l/255).blue * 255)) for l in range(256)]
@@ -169,8 +175,12 @@ def getImageCluster(lat_deg, lon_deg, xTileNum, yTileNum, zoom):
 		executor.map(getOneTile, tests)
 	for tile in tests:
 		img = tile.get('img')
-		if not img or not imgHasContrast(img):
+		if img is None:
 			return None
+		else:
+			contrast = imgHasContrast(img)
+			if not contrast:
+				return contrast
 	# get all the tiles
 	tiles = []
 	for xtile in range(xmin, xmax+1):
@@ -278,7 +288,7 @@ if __name__ == '__main__':
 
 	attemptNum = 0
 	a = None
-	while a is None and attemptNum < 50:
+	while not a and attemptNum < 50:
 		# centerLatLon = (random.randrange(-9000, 9000) / 100, random.randrange(-18000, 18000) / 100)
 		# lat, lon = num2deg(random.randint(0,1048576), random.randint(0,1048576), 20)
 		lat, lon = uniformlyRandomLatLon()
@@ -288,6 +298,9 @@ if __name__ == '__main__':
 			zoom = zooms.pop(random.randrange(len(zooms)))
 			a = getImageCluster(centerLatLon[0], centerLatLon[1], 8, 5, zoom)
 			if not a is None:
+				if a == False:
+					# got image okay but it's too low contrast, choose a new location
+					break
 				print("zoom:", zoom)
 				break
 		print(centerLatLon, a)
@@ -295,14 +308,9 @@ if __name__ == '__main__':
 	if attemptNum == 50:
 		exit()
 
-	# bw = contrasted.convert('L')
 	bw = ImageOps.equalize(a)
 	# contrasted = ImageOps.autocontrast(eq, cutoff=1, ignore=None)
-	# bw = eq.convert('L')
-	# contrasted.save(os.path.expanduser('~/Desktop/contrasted.png'))
-	a.save(os.path.expanduser('~/Desktop/a.png'))
-	# eq.save(os.path.expanduser('~/Desktop/eq.png'))
-	bw.save(os.path.expanduser('~/Desktop/bw.png'))
+	# bw.save(os.path.expanduser('~/Desktop/bw.png'))
 
 	if useRandomHue:
 		hue = random.randint(0, 359)
@@ -340,7 +348,6 @@ if __name__ == '__main__':
 	manually.save(os.path.expanduser('~/Desktop/manually.png'))
 
 	fitted = ImageOps.fit(manually, (1920,1080))
-	fitted.save(os.path.expanduser('~/Desktop/fitted.png'))
 	fitted.save(os.path.expanduser('~/AppData/Roaming/Microsoft/Windows/Themes/TranscodedWallpaper'), format='PNG')
 	# create path if not existant
 	if not os.path.exists(os.path.expanduser('~/Pictures/autowalls')):
