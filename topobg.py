@@ -391,7 +391,7 @@ if __name__ == '__main__':
 	print(name)
 	print(latinName)
 	fp = open(os.path.expanduser('~/Pictures/autowalls/topobg_location.txt'), 'w', encoding='utf8')
-	fp.write(name + "\n" + latinName)
+	fp.write((name or '') + "\n" + (latinName or ''))
 	fp.close()
 	keyVal = r'Control Panel\Desktop'
 	try:
