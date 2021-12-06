@@ -16,6 +16,9 @@ import pycountry
 
 backgroundLightnessA = 25
 backgroundLightnessB = 75
+randomBackgroundLightness = True
+minBackgroundLightnessA = 10
+maxBackgroundLightnessA = 33
 backgroundDeltaE = 35 # the desired delta e color difference between the two background hues
 useRandomHue = True # instead of the accent color, pick a random hue
 useAccentMaxChroma = False # limit chroma to the accent color
@@ -114,16 +117,6 @@ def manualGrade(bwImage, interpolation):
 			l = bwImage.getpixel((x, y))
 			colorImage.putpixel((x, y), grade[l])
 	return colorImage
-
-def pollSensor(entry):
-	sid = entry['index']
-	entry['sensor'] = Sensor(sid)
-
-def pollAllSensors(entries):
-	startDT = datetime.datetime.now()
-	with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
-		executor.map(pollSensor, entries)
-	print("downloaded individual sensor data in", datetime.datetime.now() - startDT)
 
 def spoof(url): # this function pretends not to be a Python script
 	req = Request(url) # start request
@@ -310,6 +303,10 @@ if __name__ == '__main__':
 		if useAccentMaxChroma:
 			maxChroma = int(lchC.c)
 	print('hue', hue)
+
+	if randomBackgroundLightness:
+		backgroundLightnessA = random.randint(minBackgroundLightnessA, maxBackgroundLightnessA)
+		backgroundLightnessB = 100 - backgroundLightnessA
 
 	bgAC, bgBC = findColorPairByDeltaE(hue, backgroundDeltaE, backgroundLightnessA, backgroundLightnessB)
 	# bgAC, bgBC = colorPairByHueDiff(hue, backgroundHueDiff, backgroundLightnessA, backgroundLightnessB)
