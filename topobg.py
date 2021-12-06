@@ -30,6 +30,8 @@ minShades = 24 # how many shades of grey must be in the test tile to be accepted
 smurl = r"http://services.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{0}/{2}/{1}"
 CurrentZoom = None
 
+CurrentBand, CurrentGrade, CurrentCount, CurrentSize = None, None, None, None
+
 degreesPerZ = 90 / (math.pi / 2)
 
 def uniformlyRandomLatLon():
@@ -110,16 +112,23 @@ def imgHasContrast(bwT):
 		else:
 			return True
 
-def manualGrade(bwImage, interpolation):
-	grade = [(int(interpolation(l/255).red * 255), int(interpolation(l/255).green * 255), int(interpolation(l/255).blue * 255)) for l in range(256)]
-	print(grade[0], grade[127], grade[255])
-	colorImage = Image.new('RGB', bwImage.size)
-	px = bwImage.load()
-	for x in range(0, bwImage.size[0]):
-		for y in range(0, bwImage.size[1]):
-			l = px[x, y]
-			colorImage.putpixel((x, y), grade[l])
-	return colorImage
+def gradeFunc(v):
+	return CurrentGrade[v]
+
+def colorizeWithInterpolation(bwImage, interpolation):
+	global CurrentGrade
+	# grade = [(int(interpolation(l/255).red * 255), int(interpolation(l/255).green * 255), int(interpolation(l/255).blue * 255)) for l in range(256)]
+	redGrade = [int(interpolation(l/255).red * 255) for l in range(256)]
+	greenGrade = [int(interpolation(l/255).green * 255) for l in range(256)]
+	blueGrade = [int(interpolation(l/255).blue * 255) for l in range(256)]
+	# colorImage = bwImage.convert('RGB')
+	CurrentGrade = redGrade
+	redImage = Image.eval(bwImage, gradeFunc)
+	CurrentGrade = greenGrade
+	greenImage = Image.eval(bwImage, gradeFunc)
+	CurrentGrade = blueGrade
+	blueImage = Image.eval(bwImage, gradeFunc)
+	return Image.merge('RGB', (redImage, greenImage, blueImage))
 
 def spoof(url): # this function pretends not to be a Python script
 	req = Request(url) # start request
@@ -325,22 +334,18 @@ if __name__ == '__main__':
 	print("delta e", bgAC.delta_e(bgBC, method='2000'))
 	i = bgAC.interpolate(bgBC, space='lch-d65')
 
-	# startDT = datetime.datetime.now()
-	# grade = [(int(i(l/2).red * 255), int(i(l/2).green * 255), int(i(l/2).blue * 255)) for l in range(3)]
-	# colorized = ImageOps.colorize(bw, grade[0], grade[2], mid=grade[1])
-	# print(datetime.datetime.now() - startDT, "done PIL colorizing")
 	startDT = datetime.datetime.now()
-	manually = manualGrade(bw, i)
-	print(datetime.datetime.now() - startDT, "done manually colorizing")
+	colorized = colorizeWithInterpolation(bw, i)
+	print(datetime.datetime.now() - startDT, "done colorizing")
 	# colorized.save(os.path.expanduser('~/Desktop/pil.png'))
-	manually.save(os.path.expanduser('~/Desktop/manually.png'))
+	colorized.save(os.path.expanduser('~/Desktop/colorized.png'))
 
-	fitted = ImageOps.fit(manually, (1920,1080))
+	fitted = ImageOps.fit(colorized, (1920,1080))
 	fitted.save(os.path.expanduser('~/AppData/Roaming/Microsoft/Windows/Themes/TranscodedWallpaper'), format='PNG')
 	# create path if not existant
 	if not os.path.exists(os.path.expanduser('~/Pictures/autowalls')):
 		os.makedirs(os.path.expanduser('~/Pictures/autowalls'))
-	manually.save(os.path.expanduser('~/Pictures/autowalls/topobg.png'), format='PNG')
+	colorized.save(os.path.expanduser('~/Pictures/autowalls/topobg.png'), format='PNG')
 	place = locationName(centerLatLon)
 	print(place)
 	fp = open(os.path.expanduser('~/Pictures/autowalls/topobg_location.txt'), 'w')
