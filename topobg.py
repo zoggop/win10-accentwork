@@ -1,7 +1,7 @@
 import math
 from urllib.request import urlopen, Request
 from io import BytesIO
-from PIL import Image, ImageOps
+from PIL import Image, ImageOps, ImageFilter
 import sys
 import subprocess
 import os
@@ -13,7 +13,7 @@ import datetime
 import concurrent.futures
 import geocoder
 import pycountry
-import numpy as np
+from screeninfo import get_monitors
 
 backgroundLightnessA = 25
 backgroundLightnessB = 75
@@ -23,14 +23,15 @@ maxBackgroundLightnessA = 33
 backgroundDeltaE = 35 # the desired delta e color difference between the two background hues
 useRandomHue = False # instead of the accent color, pick a random hue
 useAccentMaxChroma = True # limit chroma to the accent color
+minZoom = 10 # minimum zoom level of tiles
+maxZoom = 13 # maximum zoom level of tiles
 maxChroma = 134 # maximum chroma (if not using the accent color's maximum chroma)
 minShades = 24 # how many shades of grey must be in the test tile to be accepted
 
 # smurl = r"http://a.tile.openstreetmap.org/{0}/{1}/{2}.png"
 smurl = r"http://services.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{0}/{2}/{1}"
 CurrentZoom = None
-
-CurrentBand, CurrentGrade, CurrentCount, CurrentSize = None, None, None, None
+CurrentGrade = None
 
 degreesPerZ = 90 / (math.pi / 2)
 
@@ -154,9 +155,9 @@ def getImageCluster(lat_deg, lon_deg, xTileNum, yTileNum, zoom):
 	global CurrentZoom
 	centerX, centerY = deg2num(lat_deg, lon_deg, zoom)
 	xmin = centerX - math.ceil(xTileNum/2)
-	xmax = centerX + math.floor(xTileNum/2)
+	xmax = centerX + math.floor(xTileNum/2) - 1
 	ymin = centerY - math.ceil(yTileNum/2)
-	ymax = centerY + math.floor(yTileNum/2)
+	ymax = centerY + math.floor(yTileNum/2) - 1
 	# xmin, ymax = deg2num(lat_deg - delta_lat, lon_deg - delta_long, zoom)
 	# xmax, ymin = deg2num(lat_deg + delta_lat, lon_deg + delta_long, zoom)
 	CurrentZoom = zoom
@@ -283,6 +284,16 @@ def locationName(latLon):
 
 if __name__ == '__main__':
 
+	# get screen size
+	maxWidth, maxHeight = None, None
+	for m in get_monitors():
+		if maxWidth == None or m.width > maxWidth:
+			maxWidth = m.width
+		if maxHeight == None or m.height > maxHeight:
+			maxHeight = m.height
+	widthInTiles = math.ceil((maxWidth + 1) / 256)
+	heightInTiles = math.ceil((maxHeight + 1) / 256)
+
 	attemptNum = 0
 	a = None
 	while not a and attemptNum < 50:
@@ -290,10 +301,10 @@ if __name__ == '__main__':
 		# lat, lon = num2deg(random.randint(0,1048576), random.randint(0,1048576), 20)
 		lat, lon = uniformlyRandomLatLon()
 		centerLatLon = [lat, lon]
-		zooms = [*range(10, 14)]
+		zooms = [*range(minZoom, maxZoom+1)]
 		while len(zooms) != 0:
 			zoom = zooms.pop(random.randrange(len(zooms)))
-			a = getImageCluster(centerLatLon[0], centerLatLon[1], 8, 5, zoom)
+			a = getImageCluster(centerLatLon[0], centerLatLon[1], widthInTiles, heightInTiles, zoom)
 			if not a is None:
 				if a == False:
 					# got image okay but it's too low contrast, choose a new location
