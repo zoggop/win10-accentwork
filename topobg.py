@@ -23,10 +23,10 @@ maxBackgroundLightnessA = 33
 backgroundDeltaE = 35 # the desired delta e color difference between the two background hues
 useRandomHue = False # instead of the accent color, pick a random hue
 useAccentMaxChroma = True # limit chroma to the accent color
-minZoom = 10 # minimum zoom level of tiles
-maxZoom = 13 # maximum zoom level of tiles
+minZoom = 11 # minimum zoom level of tiles
+maxZoom = 15 # maximum zoom level of tiles
 maxChroma = 134 # maximum chroma (if not using the accent color's maximum chroma)
-minShades = 24 # how many shades of grey must be in the test tile to be accepted
+minShades = 15 # how many shades of grey must be in the test tile to be accepted
 
 # smurl = r"http://a.tile.openstreetmap.org/{0}/{1}/{2}.png"
 smurl = r"http://services.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{0}/{2}/{1}"
@@ -126,6 +126,7 @@ def gradeFunc(v):
 def colorizeWithInterpolation(bwImage, interpolation):
 	global CurrentGrade
 	# grade = [(int(interpolation(l/255).red * 255), int(interpolation(l/255).green * 255), int(interpolation(l/255).blue * 255)) for l in range(256)]
+
 	redGrade = [int(interpolation(l/255).red * 255) for l in range(256)]
 	greenGrade = [int(interpolation(l/255).green * 255) for l in range(256)]
 	blueGrade = [int(interpolation(l/255).blue * 255) for l in range(256)]
@@ -158,6 +159,10 @@ def getOneTile(tile):
 	except: 
 		print("Couldn't download image")
 
+def getTiles(tiles):
+	with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
+		executor.map(getOneTile, tiles)
+
 def getImageCluster(lat_deg, lon_deg, xTileNum, yTileNum, zoom):
 	global CurrentZoom
 	centerX, centerY = deg2num(lat_deg, lon_deg, zoom)
@@ -168,31 +173,22 @@ def getImageCluster(lat_deg, lon_deg, xTileNum, yTileNum, zoom):
 	# xmin, ymax = deg2num(lat_deg - delta_lat, lon_deg - delta_long, zoom)
 	# xmax, ymin = deg2num(lat_deg + delta_lat, lon_deg + delta_long, zoom)
 	CurrentZoom = zoom
-	# test the corners for image data (make sure we're not in the ocean)
-	tests = [
-		# {'x':xmin, 'y':ymin},
-		# {'x':xmax, 'y':ymin},
-		# {'x':xmin, 'y':ymax},
-		# {'x':xmax, 'y':ymax},
-		{'x':centerX, 'y':centerY}
-	]
-	with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
-		executor.map(getOneTile, tests)
-	for tile in tests:
-		img = tile.get('img')
-		if img is None:
-			return None
-		else:
-			contrast = imgHasContrast(img)
-			if not contrast:
-				return contrast
+	# test the center for image data (make sure we're not in the ocean)
+	testTile = {'x':centerX, 'y':centerY}
+	getOneTile(testTile)
+	img = testTile.get('img')
+	if img is None:
+		return None
+	else:
+		contrast = imgHasContrast(img)
+		if not contrast:
+			return contrast
 	# get all the tiles
 	tiles = []
 	for xtile in range(xmin, xmax+1):
 		for ytile in range(ymin, ymax+1):
 			tiles.append({'x':xtile, 'y':ytile})
-	with concurrent.futures.ThreadPoolExecutor(max_workers=len(tiles)) as executor:
-		executor.map(getOneTile, tiles)
+	getTiles(tiles)
 	# paste them into the full image
 	Cluster = Image.new('L',((xmax-xmin+1)*256-1,(ymax-ymin+1)*256-1))
 	print(xmin, xmax, ymin, ymax, Cluster.size)
@@ -200,7 +196,7 @@ def getImageCluster(lat_deg, lon_deg, xTileNum, yTileNum, zoom):
 		xtile = tile.get('x')
 		ytile = tile.get('y')
 		img = tile.get('img')
-		if img == None:
+		if img is None:
 			return None
 		Cluster.paste(img, box=((xtile-xmin)*256 ,  (ytile-ymin)*255))
 	return Cluster
@@ -211,11 +207,11 @@ def hueSwapMaybe(lightnessA, hueA, lightnessB, hueB):
 	lAhB = highestChromaColor(lightnessA, hueB)
 	lBhA = highestChromaColor(lightnessB, hueA)
 	if random.randint(0,1) == 1:
-		print("straight hues")
+		# print("straight hues")
 		a = lAhB
 		b = lBhA
 	else:
-		print("swapped hues")
+		# print("swapped hues")
 		a = lAhA
 		b = lBhB
 	return a, b
@@ -326,14 +322,19 @@ if __name__ == '__main__':
 	while not a and attemptNum < 50:
 		# centerLatLon = (random.randrange(-9000, 9000) / 100, random.randrange(-18000, 18000) / 100)
 		# lat, lon = num2deg(random.randint(0,1048576), random.randint(0,1048576), 20)
-		if attemptNum == 0 and len(sys.argv) == 3:
+		if attemptNum == 0 and len(sys.argv) > 2:
 			lat, lon = float(sys.argv[1]), float(sys.argv[2])
 		else:
 			lat, lon = uniformlyRandomLatLon()
 		centerLatLon = [lat, lon]
+		triedSpecifiedZoom = False
 		zooms = [*range(minZoom, maxZoom+1)]
 		while len(zooms) != 0:
-			zoom = zooms.pop(random.randrange(len(zooms)))
+			if len(sys.argv) > 3 and not triedSpecifiedZoom:
+				zoom = int(sys.argv[3])
+				triedSpecifiedZoom = True
+			else:
+				zoom = zooms.pop(random.randrange(len(zooms)))
 			a = getImageCluster(centerLatLon[0], centerLatLon[1], widthInTiles, heightInTiles, zoom)
 			if not a is None:
 				if a == False:
