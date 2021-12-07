@@ -163,9 +163,14 @@ def getTiles(tiles):
 	with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
 		executor.map(getOneTile, tiles)
 
-def getImageCluster(lat_deg, lon_deg, xTileNum, yTileNum, zoom):
+def getImageCluster(lat_deg, lon_deg, xTileNum, yTileNum, zoom, rotation):
 	global CurrentZoom
 	centerX, centerY = deg2num(lat_deg, lon_deg, zoom)
+	if rotation == 1 or rotation == 3:
+		# to rotate 90 or 270 degrees, switch the dimensions so that the right dimensions come out after rotation
+		xtn = xTileNum+0
+		xTileNum = yTileNum+0
+		yTileNum = xtn
 	xmin = centerX - math.ceil(xTileNum/2)
 	xmax = centerX + math.floor(xTileNum/2) - 1
 	ymin = centerY - math.ceil(yTileNum/2)
@@ -199,6 +204,12 @@ def getImageCluster(lat_deg, lon_deg, xTileNum, yTileNum, zoom):
 		if img is None:
 			return None
 		Cluster.paste(img, box=((xtile-xmin)*256 ,  (ytile-ymin)*255))
+	if rotation == 1:
+		return Cluster.transpose(Image.ROTATE_90)
+	elif rotation == 2:
+		return Cluster.transpose(Image.ROTATE_180)
+	elif rotation == 3:
+		return Cluster.transpose(Image.ROTATE_270)
 	return Cluster
 
 def hueSwapMaybe(lightnessA, hueA, lightnessB, hueB):
@@ -317,6 +328,11 @@ if __name__ == '__main__':
 	heightInTiles = math.ceil((maxHeight + 1) / 256)
 
 
+	if len(sys.argv) > 4:
+		rotation = int(sys.argv[4])
+	else:
+		rotation = random.randint(0, 3)
+	print("rotation:", rotation)
 	attemptNum = 0
 	a = None
 	while not a and attemptNum < 50:
@@ -335,7 +351,7 @@ if __name__ == '__main__':
 				triedSpecifiedZoom = True
 			else:
 				zoom = zooms.pop(random.randrange(len(zooms)))
-			a = getImageCluster(centerLatLon[0], centerLatLon[1], widthInTiles, heightInTiles, zoom)
+			a = getImageCluster(centerLatLon[0], centerLatLon[1], widthInTiles, heightInTiles, zoom, rotation)
 			if not a is None:
 				if a == False:
 					# got image okay but it's too low contrast, choose a new location
