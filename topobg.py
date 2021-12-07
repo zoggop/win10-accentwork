@@ -3,22 +3,20 @@ from urllib.request import urlopen, Request
 from io import BytesIO
 from PIL import Image, ImageOps, ImageFilter
 import sys
-import subprocess
+if sys.platform == 'win32':
+	from winreg import *
+	import subprocess
 import os
-import re
 import random
 import coloraide
-from winreg import *
-import datetime
 import concurrent.futures
-import geocoder
-import pycountry
 from screeninfo import get_monitors
 
+identifyLocation = True # get a name for the coordinates of the image?
 backgroundLightnessA = 25
 backgroundLightnessB = 75
-randomBackgroundLightness = True
-minBackgroundLightnessA = 17
+randomBackgroundLightness = True # overrides backgroundLightnessA and backgroundLightnessB, using the min and max below
+minBackgroundLightnessA = 17 # (lightnessB will just be 100 minus the randomly chosen lightnessA)
 maxBackgroundLightnessA = 33
 backgroundDeltaE = 35 # the desired delta e color difference between the two background hues
 useRandomHue = False # instead of the accent color, pick a random hue
@@ -28,7 +26,6 @@ maxZoom = 15 # maximum zoom level of tiles
 maxChroma = 134 # maximum chroma (if not using the accent color's maximum chroma)
 minShades = 15 # how many shades of grey must be in the test tile to be accepted
 
-# smurl = r"http://a.tile.openstreetmap.org/{0}/{1}/{2}.png"
 smurl = r"http://services.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{0}/{2}/{1}"
 CurrentZoom = None
 CurrentGrade = None
@@ -345,8 +342,6 @@ if __name__ == '__main__':
 	attemptNum = 0
 	a = None
 	while not a and attemptNum < 50:
-		# centerLatLon = (random.randrange(-9000, 9000) / 100, random.randrange(-18000, 18000) / 100)
-		# lat, lon = num2deg(random.randint(0,1048576), random.randint(0,1048576), 20)
 		if attemptNum == 0 and len(sys.argv) > 2:
 			lat, lon = float(sys.argv[1]), float(sys.argv[2])
 		else:
@@ -374,9 +369,8 @@ if __name__ == '__main__':
 
 	bw = ImageOps.equalize(a)
 	# contrasted = ImageOps.autocontrast(eq, cutoff=1, ignore=None)
-	# bw.save(os.path.expanduser('~/Desktop/bw.png'))
 
-	if useRandomHue:
+	if useRandomHue or sys.platform != 'win32':
 		hue = random.randint(0, 359)
 	else:
 		# get current accent color hue
@@ -397,33 +391,44 @@ if __name__ == '__main__':
 	# bgAC, bgBC = colorPairByHueDiff(hue, backgroundHueDiff, backgroundLightnessA, backgroundLightnessB)
 	print(bgAC.convert('lch-d65'))
 	print(bgBC.convert('lch-d65'))
-
 	print("delta e", bgAC.delta_e(bgBC, method='2000'))
+
+	# colorize greyscale image
 	i = bgAC.interpolate(bgBC, space='lch-d65')
-
 	colorized = colorizeWithInterpolation(bw, i)
-	print("colorized")
-	# colorized.save(os.path.expanduser('~/Desktop/pil.png'))
-	colorized.save(os.path.expanduser('~/Desktop/colorized.png'))
 
-	fitted = ImageOps.fit(colorized, (1920,1080))
-	fitted.save(os.path.expanduser('~/AppData/Roaming/Microsoft/Windows/Themes/TranscodedWallpaper'), format='PNG')
 	# create path if not existant
-	if not os.path.exists(os.path.expanduser('~/Pictures/autowalls')):
-		os.makedirs(os.path.expanduser('~/Pictures/autowalls'))
-	colorized.save(os.path.expanduser('~/Pictures/autowalls/topobg.png'), format='PNG')
-	name, latinName = locationName(centerLatLon)
-	print(name)
-	print(latinName)
-	fp = open(os.path.expanduser('~/Pictures/autowalls/topobg_location.txt'), 'w', encoding='utf8')
-	fp.write((name or '') + "\n" + (latinName or ''))
-	fp.close()
-	keyVal = r'Control Panel\Desktop'
-	try:
-		key = OpenKey(HKEY_CURRENT_USER, keyVal, 0, KEY_ALL_ACCESS)
-	except:
-		key = CreateKey(HKEY_CURRENT_USER, keyVal)
-	SetValueEx(key, "Wallpaper", 0, REG_SZ, os.path.expanduser('~/Pictures/autowalls/topobg.png'))
-	CloseKey(key)
-	subprocess.run(['rundll32.exe', 'user32.dll,', 'UpdatePerUserSystemParameters'])
-	subprocess.run(['rundll32.exe', 'user32.dll,', 'UpdatePerUserSystemParameters'])
+	if not os.path.exists(os.path.expanduser('~/color_out_of_earth')):
+		os.makedirs(os.path.expanduser('~/color_out_of_earth'))
+
+	# fit image to background size and save it
+	fitted = ImageOps.fit(colorized, (maxWidth,maxHeight))
+	fitted.save(os.path.expanduser('~/color_out_of_earth/background.png'))
+	print(os.path.expanduser('~/color_out_of_earth/background.png'), 'saved')
+
+	if sys.platform == 'win32':
+		# set windows background
+		fitted.save(os.path.expanduser('~/AppData/Roaming/Microsoft/Windows/Themes/TranscodedWallpaper'), format='PNG')
+		keyVal = r'Control Panel\Desktop'
+		try:
+			key = OpenKey(HKEY_CURRENT_USER, keyVal, 0, KEY_ALL_ACCESS)
+		except:
+			key = CreateKey(HKEY_CURRENT_USER, keyVal)
+		SetValueEx(key, "Wallpaper", 0, REG_SZ, os.path.expanduser('~/color_out_of_earth/background.png'))
+		CloseKey(key)
+		subprocess.run(['rundll32.exe', 'user32.dll,', 'UpdatePerUserSystemParameters'])
+		subprocess.run(['rundll32.exe', 'user32.dll,', 'UpdatePerUserSystemParameters'])
+
+	if identifyLocation == True:
+		import geocoder
+		import pycountry
+		name, latinName = locationName(centerLatLon)
+		nameText = name or ''
+		print(name)
+		if latinName != name:
+			nameText = nameText + "\n" + (latinName or '')
+			print(latinName)
+		fp = open(os.path.expanduser('~/color_out_of_earth/location.txt'), 'w', encoding='utf8')
+		fp.write(nameText)
+		fp.close()
+		print(os.path.expanduser('~/color_out_of_earth/location.txt'), 'saved')
