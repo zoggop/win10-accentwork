@@ -142,7 +142,6 @@ def colorizeWithInterpolation(bwImage, interpolation):
 	blueGrade = [int(interpolation(l/255).blue * 255) for l in range(256)]
 	CurrentGrade = redGrade
 	redImage = Image.eval(bwImage, gradeFunc)
-	print(what)
 	CurrentGrade = greenGrade
 	greenImage = Image.eval(bwImage, gradeFunc)
 	CurrentGrade = blueGrade
