@@ -111,28 +111,38 @@ def imgHasContrast(bwT):
 	colors = bwT.getcolors()
 	shades = len(colors)
 	contrast = colors[-1][1] - colors[0][1]
-	print("contrast:", contrast, "shades:", shades)
 	if contrast == 153 and shades == 65:
 		return None # contrast 153 with 65 shades is the "tile not available" tile
 	else:
+		print("contrast:", contrast, "shades:", shades)
 		if shades < minShades:
 			return False
 		else:
 			return True
+
+def colorComponentFloatToChanceList(componentFloat):
+	component = componentFloat * 255
+	down = math.floor(component)
+	up = math.ceil(component)
+	upChances = math.floor((component - down) * 10)
+	chances = []
+	for i in range(upChances):
+		chances.append(up)
+	for i in range(10 - upChances):
+		chances.append(down)
+	return chances
 
 def gradeFunc(v):
 	return CurrentGrade[v]
 
 def colorizeWithInterpolation(bwImage, interpolation):
 	global CurrentGrade
-	# grade = [(int(interpolation(l/255).red * 255), int(interpolation(l/255).green * 255), int(interpolation(l/255).blue * 255)) for l in range(256)]
-
 	redGrade = [int(interpolation(l/255).red * 255) for l in range(256)]
 	greenGrade = [int(interpolation(l/255).green * 255) for l in range(256)]
 	blueGrade = [int(interpolation(l/255).blue * 255) for l in range(256)]
-	# colorImage = bwImage.convert('RGB')
 	CurrentGrade = redGrade
 	redImage = Image.eval(bwImage, gradeFunc)
+	print(what)
 	CurrentGrade = greenGrade
 	greenImage = Image.eval(bwImage, gradeFunc)
 	CurrentGrade = blueGrade
@@ -392,9 +402,8 @@ if __name__ == '__main__':
 	print("delta e", bgAC.delta_e(bgBC, method='2000'))
 	i = bgAC.interpolate(bgBC, space='lch-d65')
 
-	startDT = datetime.datetime.now()
 	colorized = colorizeWithInterpolation(bw, i)
-	print(datetime.datetime.now() - startDT, "done colorizing")
+	print("colorized")
 	# colorized.save(os.path.expanduser('~/Desktop/pil.png'))
 	colorized.save(os.path.expanduser('~/Desktop/colorized.png'))
 
