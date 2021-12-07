@@ -18,11 +18,11 @@ backgroundLightnessB = 75
 randomBackgroundLightness = True # overrides backgroundLightnessA and backgroundLightnessB, using the min and max below
 minBackgroundLightnessA = 17 # (lightnessB will just be 100 minus the randomly chosen lightnessA)
 maxBackgroundLightnessA = 33
-backgroundDeltaE = 35 # the desired delta e color difference between the two background hues
+backgroundDeltaE = 38 # the desired delta e color difference between the two background hues
 useAccentHue = True # use the accent color's hue, if available, otherwise random
 useAccentMaxChroma = True # limit chroma to the accent color
 minZoom = 11 # minimum zoom level of tiles
-maxZoom = 15 # maximum zoom level of tiles
+maxZoom = 13 # maximum zoom level of tiles
 maxChroma = 134 # maximum chroma (if not using the accent color's maximum chroma)
 minShades = 15 # how many shades of grey must be in the test tile to be accepted
 
@@ -209,7 +209,7 @@ def getImageCluster(lat_deg, lon_deg, xTileNum, yTileNum, zoom, rotation):
 		img = tile.get('img')
 		if img is None:
 			return None
-		Cluster.paste(img, box=((xtile-xmin)*256 ,  (ytile-ymin)*255))
+		Cluster.paste(img, box=((xtile-xmin)*256 ,  (ytile-ymin)*256))
 	if rotation == 1:
 		return Cluster.transpose(Image.ROTATE_90)
 	elif rotation == 2:
@@ -332,7 +332,6 @@ if __name__ == '__main__':
 			maxHeight = m.height
 	widthInTiles = math.ceil((maxWidth + 1) / 256)
 	heightInTiles = math.ceil((maxHeight + 1) / 256)
-
 
 	if len(sys.argv) > 4:
 		rotation = int(sys.argv[4])
