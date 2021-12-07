@@ -19,7 +19,7 @@ randomBackgroundLightness = True # overrides backgroundLightnessA and background
 minBackgroundLightnessA = 17 # (lightnessB will just be 100 minus the randomly chosen lightnessA)
 maxBackgroundLightnessA = 33
 backgroundDeltaE = 35 # the desired delta e color difference between the two background hues
-useRandomHue = False # instead of the accent color, pick a random hue
+useAccentHue = True # use the accent color's hue, if available, otherwise random
 useAccentMaxChroma = True # limit chroma to the accent color
 minZoom = 11 # minimum zoom level of tiles
 maxZoom = 15 # maximum zoom level of tiles
@@ -370,9 +370,7 @@ if __name__ == '__main__':
 	bw = ImageOps.equalize(a)
 	# contrasted = ImageOps.autocontrast(eq, cutoff=1, ignore=None)
 
-	if useRandomHue or sys.platform != 'win32':
-		hue = random.randint(0, 359)
-	else:
+	if useAccentHue == True and sys.platform == 'win32':
 		# get current accent color hue
 		key = OpenKey(HKEY_CURRENT_USER, r'SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Accent', 0, KEY_ALL_ACCESS)
 		val = QueryValueEx(key, "AccentColorMenu")
@@ -381,6 +379,8 @@ if __name__ == '__main__':
 		hue = lchC.h
 		if useAccentMaxChroma:
 			maxChroma = int(lchC.c)
+	else:
+		hue = random.randint(0, 359)
 	print('hue', hue)
 
 	if randomBackgroundLightness:
