@@ -18,19 +18,41 @@ backgroundLightnessB = 75
 randomBackgroundLightness = True # overrides backgroundLightnessA and backgroundLightnessB, using the min and max below
 minBackgroundLightnessA = 17 # (lightnessB will just be 100 minus the randomly chosen lightnessA)
 maxBackgroundLightnessA = 33
-backgroundDeltaE = 38 # the desired delta e color difference between the two background hues
+backgroundDeltaE = 40 # the desired delta e color difference between the two background hues
 useAccentHue = True # use the accent color's hue, if available, otherwise random
 useAccentMaxChroma = True # limit chroma to the accent color
-minZoom = 11 # minimum zoom level of tiles
-maxZoom = 13 # maximum zoom level of tiles
 maxChroma = 134 # maximum chroma (if not using the accent color's maximum chroma)
-minShades = 15 # how many shades of grey must be in the test tile to be accepted
+minShades = 3 # how many colors must be in the test tile to be accepted
 
-smurl = r"http://services.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{0}/{2}/{1}"
+# http://e4ftl01.cr.usgs.gov/MEASURES/SRTMGL1.003/2000.02.11/N42W123.SRTMGL1.2.jpg
+# https://e4ftl01.cr.usgs.gov/MEASURES/SRTMGL1.003/2000.02.11/N42W123.SRTMGL1.2.jpg
+# from 42 N to 43 N, 123 W to 122 W
+# https://e4ftl01.cr.usgs.gov/MEASURES/SRTMGL1.003/2000.02.11/N20E012.SRTMGL1.2.jpg
+# https://e4ftl01.cr.usgs.gov/MEASURES/SRTMGL1.003/2000.02.11/S28E133.SRTMGL1.2.jpg
+
+# x is 1, y is 2, z is 0
+earthURL = r"http://services.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{0}/{2}/{1}"
+marsURL = r"https://s3.us-east-2.amazonaws.com/opmmarstiles/hillshade-tiles/{0}/{1}/{2}.png"
+xyzURLspecs = [
+	{'url':earthURL, 'name':'Earth',
+	'minZoom':11, 'maxZoom':13,
+	'xOrder':0, 'yOrder':0,
+	'redMult':1, 'greenMult':0.9797, 'blueMult':0.9644,
+	'filterShades':123}, # exact number of shades in a tile that indicates location should be thrown out
+
+	# {'url':marsURL, 'name':'Mars', 'extraterrestrial':True,
+	# 'minZoom':6, 'maxZoom':6,
+	# 'xOrder':0, 'yOrder':1,
+	# 'redMult':1, 'greenMult':1, 'blueMult':1,},
+]
+
+CurrentURL = None
 CurrentZoom = None
 CurrentGrade = None
+CurrentUnavailImageList = None
+urlSpec = None
 
-degreesPerZ = 90 / (math.pi / 2)
+degreesPerTheta = 90 / (math.pi / 2)
 
 locStruct = [
 		['city', 'locality', 'municipality', 'town', 'village'],
@@ -40,8 +62,9 @@ locStruct = [
 		['longlabel', 'match_addr', 'address']] # fallbacks
 
 def uniformlyRandomLatLon():
+	# https://www.cs.cmu.edu/~mws/rpos.html
 	z = random.randint(-10000000, 10000000) / 10000000
-	lat = math.asin(z) * degreesPerZ
+	lat = math.asin(z) * degreesPerTheta
 	lon = random.randint(-18000000, 18000000) / 100000
 	return lat, lon
 
@@ -61,23 +84,22 @@ def rgb_to_lch(red, green, blue):
 	return None
 
 def highestChromaColor(lightness, hue):
-	for chroma in range(maxChroma, 0, -1):
+	chromaStep = 10
+	if maxChroma < 10:
+		chromaStep = 1
+	chroma = maxChroma
+	iteration = 0
+	while iteration < 35:
 		c = lch_to_rgb(lightness, chroma, hue)
 		if not c is None:
-			if chroma < maxChroma:
-				decaChroma = chroma + 0.9
-				while decaChroma >= chroma:
-					dc = lch_to_rgb(lightness, decaChroma, hue)
-					if not dc is None:
-						centiChroma = decaChroma + 0.09
-						while centiChroma >= decaChroma:
-							cc = lch_to_rgb(lightness, centiChroma, hue)
-							if not cc is None:
-								return cc
-							centiChroma -= 0.01
-					decaChroma -= 0.1
-			else:
+			if chromaStep == 0.01 or maxChroma == 0:
 				return c
+			else:
+				chroma += chromaStep
+				chromaStep /= 10
+				chroma -= chromaStep
+		chroma -= chromaStep
+		iteration += 1
 
 def hexToIntDwordColor(hexString):
 	convertable = '0xff' + hexString[4:] + hexString[2:4] + hexString[:2]
@@ -104,46 +126,39 @@ def num2deg(xtile, ytile, zoom):
   lat_deg = math.degrees(lat_rad)
   return (lat_deg, lon_deg)
 
-def imgHasContrast(bwT):
-	colors = bwT.getcolors()
+def imgHasContrast(img):
+	if img is None:
+		return None
+	colors = img.getcolors(16777216)
+	if colors is None:
+		return None
 	shades = len(colors)
-	contrast = colors[-1][1] - colors[0][1]
-	if contrast == 153 and shades == 65:
-		return None # contrast 153 with 65 shades is the "tile not available" tile
+	if CurrentUnavailImageList is None and shades == 123:
+		return None # 123 shades is probably the "tile not available" tile
 	else:
-		print("contrast:", contrast, "shades:", shades)
+		print('shades: ', shades)
 		if shades < minShades:
 			return False
 		else:
 			return True
 
-def colorComponentFloatToChanceList(componentFloat):
-	component = componentFloat * 255
-	down = math.floor(component)
-	up = math.ceil(component)
-	upChances = math.floor((component - down) * 10)
-	chances = []
-	for i in range(upChances):
-		chances.append(up)
-	for i in range(10 - upChances):
-		chances.append(down)
-	return chances
+def imgIsUnavailable(img):
+	if CurrentUnavailImageList is None:
+		return None
+	if list(img.getdata()) == CurrentUnavailImageList:
+		print("unavailable image")
+		return True
+	return False
 
-def gradeFunc(v):
-	return CurrentGrade[v]
-
-def colorizeWithInterpolation(bwImage, interpolation):
-	global CurrentGrade
-	redGrade = [int(interpolation(l/255).red * 255) for l in range(256)]
-	greenGrade = [int(interpolation(l/255).green * 255) for l in range(256)]
-	blueGrade = [int(interpolation(l/255).blue * 255) for l in range(256)]
-	CurrentGrade = redGrade
-	redImage = Image.eval(bwImage, gradeFunc)
-	CurrentGrade = greenGrade
-	greenImage = Image.eval(bwImage, gradeFunc)
-	CurrentGrade = blueGrade
-	blueImage = Image.eval(bwImage, gradeFunc)
-	return Image.merge('RGB', (redImage, greenImage, blueImage))
+def rotateImage(img, rotation):
+	if rotation == 1:
+		return img.transpose(Image.ROTATE_90)
+	elif rotation == 2:
+		return img.transpose(Image.ROTATE_180)
+	elif rotation == 3:
+		return img.transpose(Image.ROTATE_270)
+	else:
+		return img
 
 def spoof(url): # this function pretends not to be a Python script
 	req = Request(url) # start request
@@ -157,43 +172,43 @@ def spoof(url): # this function pretends not to be a Python script
 
 def getOneTile(tile):
 	try:
-		imgurl = smurl.format(CurrentZoom, tile.get('x'), tile.get('y'))
+		imgurl = CurrentURL.format(CurrentZoom, tile.get('x'), tile.get('y'))
 		# print("Opening: " + imgurl)
 		img = spoof(imgurl)
-		img = img.convert('L')
+		# img = img.convert('L')
 		tile['img'] = img
 	except: 
 		print("Couldn't download image")
 
 def getTiles(tiles):
-	with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
+	with concurrent.futures.ThreadPoolExecutor(max_workers=12) as executor:
 		executor.map(getOneTile, tiles)
 
-def getImageCluster(lat_deg, lon_deg, xTileNum, yTileNum, zoom, rotation):
+def getImageCluster(lat_deg, lon_deg, xTileNum, yTileNum, zoom, rotation, xOrder, yOrder):
 	global CurrentZoom
+	CurrentZoom = zoom
 	centerX, centerY = deg2num(lat_deg, lon_deg, zoom)
 	if rotation == 1 or rotation == 3:
 		# to rotate 90 or 270 degrees, switch the dimensions so that the right dimensions come out after rotation
 		xtn = xTileNum+0
 		xTileNum = yTileNum+0
 		yTileNum = xtn
-	xmin = centerX - math.ceil(xTileNum/2)
-	xmax = centerX + math.floor(xTileNum/2) - 1
-	ymin = centerY - math.ceil(yTileNum/2)
-	ymax = centerY + math.floor(yTileNum/2) - 1
-	# xmin, ymax = deg2num(lat_deg - delta_lat, lon_deg - delta_long, zoom)
-	# xmax, ymin = deg2num(lat_deg + delta_lat, lon_deg + delta_long, zoom)
-	CurrentZoom = zoom
-	# test the center for image data (make sure we're not in the ocean)
+	xmin = centerX - math.floor(xTileNum/2)
+	xmax = centerX + math.ceil(xTileNum/2) - 1
+	ymin = centerY - math.floor(yTileNum/2)
+	ymax = centerY + math.ceil(yTileNum/2) - 1
+	# test the center for contrast (not in the ocean) or "tile not available"
 	testTile = {'x':centerX, 'y':centerY}
 	getOneTile(testTile)
 	img = testTile.get('img')
-	if img is None:
+	if img is None or imgIsUnavailable(img):
 		return None
 	else:
 		contrast = imgHasContrast(img)
 		if not contrast:
 			return contrast
+		else:
+			img.save(os.path.expanduser('~/color_out_of_earth/tile') + '{}-{}-{}'.format(zoom, centerX, centerY) + '.png')
 	# get all the tiles
 	tiles = []
 	for xtile in range(xmin, xmax+1):
@@ -201,7 +216,7 @@ def getImageCluster(lat_deg, lon_deg, xTileNum, yTileNum, zoom, rotation):
 			tiles.append({'x':xtile, 'y':ytile})
 	getTiles(tiles)
 	# paste them into the full image
-	Cluster = Image.new('L',((xmax-xmin+1)*256-1,(ymax-ymin+1)*256-1))
+	Cluster = Image.new('RGB',((xmax-xmin+1)*256-1,(ymax-ymin+1)*256-1))
 	print(xmin, xmax, ymin, ymax, Cluster.size)
 	for tile in tiles:
 		xtile = tile.get('x')
@@ -209,14 +224,53 @@ def getImageCluster(lat_deg, lon_deg, xTileNum, yTileNum, zoom, rotation):
 		img = tile.get('img')
 		if img is None:
 			return None
-		Cluster.paste(img, box=((xtile-xmin)*256 ,  (ytile-ymin)*256))
-	if rotation == 1:
-		return Cluster.transpose(Image.ROTATE_90)
-	elif rotation == 2:
-		return Cluster.transpose(Image.ROTATE_180)
-	elif rotation == 3:
-		return Cluster.transpose(Image.ROTATE_270)
-	return Cluster
+		if xOrder == 0:
+			boxX = xtile - xmin
+		elif xOrder == 1:
+			boxX = xmax - xtile
+		if yOrder == 0:
+			boxY = ytile - ymin
+		elif yOrder == 1:
+			boxY = ymax - ytile
+		# Cluster.paste(img, box=((xtile-xmin)*256 ,  (ytile-ymin)*256))
+		Cluster.paste(img, box=(boxX*256, boxY*256))
+	return rotateImage(Cluster, rotation)
+
+def gradeFunc(v):
+	return CurrentGrade[v]
+
+# adjusting for the warm-toned hillshade
+def gradeGreenFunc(v):
+	return CurrentGrade[min(255,int(v/0.9797))]
+
+def gradeBlueFunc(v):
+	return CurrentGrade[min(255,int(v/0.9644))]
+
+def colorizeRGBWithInterpolation(img, interpolation):
+	global CurrentGrade
+	redGrade = [int(interpolation(l/255).red * 255) for l in range(256)]
+	greenGrade = [int(interpolation(l/255).green * 255) for l in range(256)]
+	blueGrade = [int(interpolation(l/255).blue * 255) for l in range(256)]
+	CurrentGrade = redGrade
+	redImage = Image.eval(img.getchannel('R'), gradeFunc)
+	CurrentGrade = greenGrade
+	greenImage = Image.eval(img.getchannel('G'), gradeGreenFunc)
+	CurrentGrade = blueGrade
+	blueImage = Image.eval(img.getchannel('B'), gradeBlueFunc)
+	return Image.merge('RGB', (redImage, greenImage, blueImage))
+
+def colorizeWithInterpolation(bwImage, interpolation):
+	global CurrentGrade
+	redGrade = [int(interpolation(l/255).red * 255) for l in range(256)]
+	greenGrade = [int(interpolation(l/255).green * 255) for l in range(256)]
+	blueGrade = [int(interpolation(l/255).blue * 255) for l in range(256)]
+	CurrentGrade = redGrade
+	redImage = Image.eval(bwImage, gradeFunc)
+	CurrentGrade = greenGrade
+	greenImage = Image.eval(bwImage, gradeFunc)
+	CurrentGrade = blueGrade
+	blueImage = Image.eval(bwImage, gradeFunc)
+	return Image.merge('RGB', (redImage, greenImage, blueImage))
 
 def hueSwapMaybe(lightnessA, hueA, lightnessB, hueB):
 	lAhA = highestChromaColor(lightnessA, hueA)
@@ -333,6 +387,15 @@ if __name__ == '__main__':
 	widthInTiles = math.ceil((maxWidth + 1) / 256)
 	heightInTiles = math.ceil((maxHeight + 1) / 256)
 
+	urlSpec = random.choice(xyzURLspecs)
+	print(urlSpec.get('name'))
+	CurrentURL = urlSpec.get('url')
+	# get image that server provides when it has no data, if possible
+	if os.path.exists('{}-unavail.png'.format(urlSpec.get('name'))):
+		CurrentUnavailImageList = list(Image.open('{}-unavail.png'.format(urlSpec.get('name'))).getdata())
+	elif os.path.exists(os.path.expanduser('~/color_out_of_earth/{}-unavail.png'.format(urlSpec.get('name')))):
+		CurrentUnavailImageList = list(Image.open(os.path.expanduser('~/color_out_of_earth/{}-unavail.png'.format(urlSpec.get('name')))).getdata())
+
 	if len(sys.argv) > 4:
 		rotation = int(sys.argv[4])
 	else:
@@ -347,26 +410,28 @@ if __name__ == '__main__':
 			lat, lon = uniformlyRandomLatLon()
 		centerLatLon = [lat, lon]
 		triedSpecifiedZoom = False
-		zooms = [*range(minZoom, maxZoom+1)]
+		zooms = [*range(urlSpec.get('minZoom'), urlSpec.get('maxZoom')+1)]
 		while len(zooms) != 0:
 			if len(sys.argv) > 3 and not triedSpecifiedZoom:
 				zoom = int(sys.argv[3])
 				triedSpecifiedZoom = True
 			else:
 				zoom = zooms.pop(random.randrange(len(zooms)))
-			a = getImageCluster(centerLatLon[0], centerLatLon[1], widthInTiles, heightInTiles, zoom, rotation)
+			a = getImageCluster(centerLatLon[0], centerLatLon[1], widthInTiles, heightInTiles, zoom, rotation, urlSpec.get('xOrder'), urlSpec.get('yOrder'))
 			if not a is None:
 				if a == False:
 					# got image okay but it's too low contrast, choose a new location
 					break
-				print("zoom:", zoom)
 				break
-		print(centerLatLon, a)
+		print(*centerLatLon, zoom, rotation)
 		attemptNum += 1
 	if attemptNum == 50:
 		exit()
 
-	bw = ImageOps.equalize(a)
+	# eqImg = ImageOps.equalize(a)
+	eqImg = ImageOps.autocontrast(a, cutoff=0, ignore=None)
+	eqImg.save(os.path.expanduser('~/color_out_of_earth/eq.png'))
+	a.save(os.path.expanduser('~/color_out_of_earth/a.png'))
 	# contrasted = ImageOps.autocontrast(eq, cutoff=1, ignore=None)
 
 	if useAccentHue == True and sys.platform == 'win32':
@@ -392,9 +457,9 @@ if __name__ == '__main__':
 	print(bgBC.convert('lch-d65'))
 	print("delta e", bgAC.delta_e(bgBC, method='2000'))
 
-	# colorize greyscale image
+	# colorize image
 	i = bgAC.interpolate(bgBC, space='lch-d65')
-	colorized = colorizeWithInterpolation(bw, i)
+	colorized = colorizeRGBWithInterpolation(eqImg, i)
 
 	# create path if not existant
 	if not os.path.exists(os.path.expanduser('~/color_out_of_earth')):
@@ -418,7 +483,7 @@ if __name__ == '__main__':
 		subprocess.run(['rundll32.exe', 'user32.dll,', 'UpdatePerUserSystemParameters'])
 		subprocess.run(['rundll32.exe', 'user32.dll,', 'UpdatePerUserSystemParameters'])
 
-	if identifyLocation == True:
+	if identifyLocation == True and not urlSpec.get('extraterrestrial'):
 		import geocoder
 		import pycountry
 		name, latinName = locationName(centerLatLon)
