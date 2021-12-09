@@ -37,7 +37,7 @@ xyzURLspecs = [
 	{'url':earthURL, 'name':'Earth',
 	'minZoom':11, 'maxZoom':13,
 	'xOrder':0, 'yOrder':0,
-	'redMult':1, 'greenMult':0.9797, 'blueMult':0.9644,
+	'redMult':1, 'greenMult':0.9961, 'blueMult':0.9856,
 	'filterShades':123}, # exact number of shades in a tile that indicates location should be thrown out
 
 	# {'url':marsURL, 'name':'Mars', 'extraterrestrial':True,
@@ -49,6 +49,7 @@ xyzURLspecs = [
 CurrentURL = None
 CurrentZoom = None
 CurrentGrade = None
+CurrentMult = None
 CurrentUnavailImageList = None
 urlSpec = None
 
@@ -133,8 +134,8 @@ def imgHasContrast(img):
 	if colors is None:
 		return None
 	shades = len(colors)
-	if CurrentUnavailImageList is None and shades == 123:
-		return None # 123 shades is probably the "tile not available" tile
+	if CurrentUnavailImageList is None and shades == urlSpec.get('filterShades'):
+		return None # this number of shades is probably a "tile not available" tile
 	else:
 		print('shades: ', shades)
 		if shades < minShades:
@@ -207,8 +208,6 @@ def getImageCluster(lat_deg, lon_deg, xTileNum, yTileNum, zoom, rotation, xOrder
 		contrast = imgHasContrast(img)
 		if not contrast:
 			return contrast
-		else:
-			img.save(os.path.expanduser('~/color_out_of_earth/tile') + '{}-{}-{}'.format(zoom, centerX, centerY) + '.png')
 	# get all the tiles
 	tiles = []
 	for xtile in range(xmin, xmax+1):
@@ -236,27 +235,64 @@ def getImageCluster(lat_deg, lon_deg, xTileNum, yTileNum, zoom, rotation, xOrder
 		Cluster.paste(img, box=(boxX*256, boxY*256))
 	return rotateImage(Cluster, rotation)
 
+# create multiplications for correcting an off-white base image
+def determineColorMults(img):
+	redMults, greenMults, blueMults = {}, {}, {}
+	for c in img.getcolors(16777216):
+		rgb = c[1]
+		highestComponent = max(rgb[0], rgb[1], rgb[2])
+		if highestComponent > 0:
+			if rgb[0] > 0:
+				redMults[rgb[0]] = highestComponent / rgb[0]
+			if rgb[1] > 0:
+				greenMults[rgb[1]] = highestComponent / rgb[1]
+			if rgb[2] > 0:
+				blueMults[rgb[2]] = highestComponent / rgb[2]
+	return redMults, greenMults, blueMults
+
+def averageImageColor(img):
+	rSum, gSum, bSum = 0, 0, 0
+	colors = img.getcolors(16777216)
+	numColors = len(colors)
+	for c in colors:
+		rgb = c[1]
+		rSum += rgb[0]
+		gSum += rgb[1]
+		bSum += rgb[2]
+	return [rSum / numColors, gSum / numColors, bSum / numColors]
+
+def dominantImageColor(img):
+	colors = img.getcolors(16777216)
+	most, mostColor = None, None
+	for c in colors:
+		if most is None or c[0] > most:
+			most = c[0]
+			mostColor = c[1]
+	return mostColor
+
 def gradeFunc(v):
 	return CurrentGrade[v]
 
 # adjusting for the warm-toned hillshade
-def gradeGreenFunc(v):
-	return CurrentGrade[min(255,int(v/0.9797))]
+def gradeAndCorrectFunc(v):
+	return CurrentGrade[max(0, min(255, int(v * CurrentMult)))]
 
-def gradeBlueFunc(v):
-	return CurrentGrade[min(255,int(v/0.9644))]
-
-def colorizeRGBWithInterpolation(img, interpolation):
-	global CurrentGrade
+def colorizeAndCorrectWithInterpolation(img, interpolation):
+	global CurrentGrade, CurrentMult
 	redGrade = [int(interpolation(l/255).red * 255) for l in range(256)]
 	greenGrade = [int(interpolation(l/255).green * 255) for l in range(256)]
 	blueGrade = [int(interpolation(l/255).blue * 255) for l in range(256)]
+	domRGB = dominantImageColor(img)
+	highestComponent = max(*domRGB)
 	CurrentGrade = redGrade
-	redImage = Image.eval(img.getchannel('R'), gradeFunc)
+	CurrentMult = highestComponent / domRGB[0]
+	redImage = Image.eval(img.getchannel('R'), gradeAndCorrectFunc)
 	CurrentGrade = greenGrade
-	greenImage = Image.eval(img.getchannel('G'), gradeGreenFunc)
+	CurrentMult = highestComponent / domRGB[1]
+	greenImage = Image.eval(img.getchannel('G'), gradeAndCorrectFunc)
 	CurrentGrade = blueGrade
-	blueImage = Image.eval(img.getchannel('B'), gradeBlueFunc)
+	CurrentMult = highestComponent / domRGB[2]
+	blueImage = Image.eval(img.getchannel('B'), gradeAndCorrectFunc)
 	return Image.merge('RGB', (redImage, greenImage, blueImage))
 
 def colorizeWithInterpolation(bwImage, interpolation):
@@ -430,9 +466,8 @@ if __name__ == '__main__':
 
 	# eqImg = ImageOps.equalize(a)
 	eqImg = ImageOps.autocontrast(a, cutoff=0, ignore=None)
-	eqImg.save(os.path.expanduser('~/color_out_of_earth/eq.png'))
-	a.save(os.path.expanduser('~/color_out_of_earth/a.png'))
-	# contrasted = ImageOps.autocontrast(eq, cutoff=1, ignore=None)
+	# eqImg.save(os.path.expanduser('~/color_out_of_earth/eq.png'))
+	# a.save(os.path.expanduser('~/color_out_of_earth/a.png'))
 
 	if useAccentHue == True and sys.platform == 'win32':
 		# get current accent color hue
@@ -459,7 +494,10 @@ if __name__ == '__main__':
 
 	# colorize image
 	i = bgAC.interpolate(bgBC, space='lch-d65')
-	colorized = colorizeRGBWithInterpolation(eqImg, i)
+	# i = coloraide.Color('srgb', [0,0,0]).interpolate(coloraide.Color('srgb', [1,1,1]), space='lab-d65') # for testing white balance
+	colorized = colorizeAndCorrectWithInterpolation(eqImg, i)
+	# print(averageImageColor(eqImg), dominantImageColor(eqImg))
+	# print(averageImageColor(colorized), dominantImageColor(colorized))
 
 	# create path if not existant
 	if not os.path.exists(os.path.expanduser('~/color_out_of_earth')):
