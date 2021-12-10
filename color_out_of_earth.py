@@ -230,16 +230,6 @@ def getImageCluster(lat_deg, lon_deg, xTileNum, yTileNum, zoom, rotation, xOrder
 		Cluster.paste(img, box=(boxX*256, boxY*256))
 	return rotateImage(Cluster, rotation)
 
-def image_histogram_equalization(image, number_bins=256):
-    # from http://www.janeriksolem.net/histogram-equalization-with-python-and.html
-    # get image histogram
-    image_histogram, bins = np.histogram(image.flatten(), number_bins, density=True)
-    cdf = image_histogram.cumsum() # cumulative distribution function
-    cdf = 255 * cdf / cdf[-1] # normalize
-    # use linear interpolation of cdf to find new pixel values
-    image_equalized = np.interp(image.flatten(), bins[:-1], cdf)
-    return image_equalized.reshape(image.shape), cdf
-
 def dominantImageColor(img):
 	colors = img.getcolors(16777216)
 	most, mostColor = None, None
@@ -249,27 +239,9 @@ def dominantImageColor(img):
 			mostColor = c[1]
 	return mostColor
 
-def gradeFunc(v):
-	return CurrentGrade[v]
-
 # adjusting for the warm-toned hillshade
 def gradeAndCorrectFunc(v):
 	return CurrentGrade[max(0, min(255, int(v * CurrentMult)))]
-
-def correctFunc(v):
-	return max(0, min(255, int(v * CurrentMult)))
-
-def correctWhiteBalance(img):
-	global CurrentMult
-	domRGB = dominantImageColor(img)
-	highestComponent = max(*domRGB)
-	CurrentMult = highestComponent / domRGB[0]
-	redImage = Image.eval(img.getchannel('R'), correctFunc)
-	CurrentMult = highestComponent / domRGB[1]
-	greenImage = Image.eval(img.getchannel('G'), correctFunc)
-	CurrentMult = highestComponent / domRGB[2]
-	blueImage = Image.eval(img.getchannel('B'), correctFunc)
-	return Image.merge('RGB', (redImage, greenImage, blueImage))
 
 def colorizeAndCorrectWithInterpolation(img, interpolation):
 	global CurrentGrade, CurrentMult
@@ -287,19 +259,6 @@ def colorizeAndCorrectWithInterpolation(img, interpolation):
 	CurrentGrade = blueGrade
 	CurrentMult = highestComponent / domRGB[2]
 	blueImage = Image.eval(img.getchannel('B'), gradeAndCorrectFunc)
-	return Image.merge('RGB', (redImage, greenImage, blueImage))
-
-def colorizeWithInterpolation(img, interpolation):
-	global CurrentGrade
-	redGrade = [int(interpolation(l/255).red * 255) for l in range(256)]
-	greenGrade = [int(interpolation(l/255).green * 255) for l in range(256)]
-	blueGrade = [int(interpolation(l/255).blue * 255) for l in range(256)]
-	CurrentGrade = redGrade
-	redImage = Image.eval(img.getchannel('R'), gradeFunc)
-	CurrentGrade = greenGrade
-	greenImage = Image.eval(img.getchannel('G'), gradeFunc)
-	CurrentGrade = blueGrade
-	blueImage = Image.eval(img.getchannel('B'), gradeFunc)
 	return Image.merge('RGB', (redImage, greenImage, blueImage))
 
 def hueSwapMaybe(lightnessA, hueA, lightnessB, hueB):
