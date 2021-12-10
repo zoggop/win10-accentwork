@@ -8,6 +8,12 @@ from PIL import Image, ImageOps, ImageFilter
 from wand.image import Image as WandImage
 import os
 
+# http://e4ftl01.cr.usgs.gov/MEASURES/SRTMGL1.003/2000.02.11/N42W123.SRTMGL1.2.jpg
+# https://e4ftl01.cr.usgs.gov/MEASURES/SRTMGL1.003/2000.02.11/N42W123.SRTMGL1.2.jpg
+# from 42 N to 43 N, 123 W to 122 W
+# https://e4ftl01.cr.usgs.gov/MEASURES/SRTMGL1.003/2000.02.11/N20E012.SRTMGL1.2.jpg
+# https://e4ftl01.cr.usgs.gov/MEASURES/SRTMGL1.003/2000.02.11/S28E133.SRTMGL1.2.jpg
+
 def spoof(url): # this function pretends not to be a Python script
     req = Request(url) # start request
     req.add_header('User-agent','Firefox') # add user agent to request

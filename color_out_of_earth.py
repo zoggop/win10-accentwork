@@ -16,19 +16,15 @@ identifyLocation = True # get a name for the coordinates of the image?
 backgroundLightnessA = 25
 backgroundLightnessB = 75
 randomBackgroundLightness = True # overrides backgroundLightnessA and backgroundLightnessB, using the min and max below
-minBackgroundLightnessA = 17 # (lightnessB will just be 100 minus the randomly chosen lightnessA)
+minBackgroundLightnessA = 17
 maxBackgroundLightnessA = 33
-backgroundDeltaE = 40 # the desired delta e color difference between the two background hues
+lightnessCeiling = 90 # lightnessB will be lightnessCeiling minus the randomly chosen lightnessA
+backgroundDeltaE = 38 # the desired delta e color difference between the two background hues
 useAccentHue = True # use the accent color's hue, if available, otherwise random
 useAccentMaxChroma = True # limit chroma to the accent color
 maxChroma = 134 # maximum chroma (if not using the accent color's maximum chroma)
 minShades = 3 # how many colors must be in the test tile to be accepted
-
-# http://e4ftl01.cr.usgs.gov/MEASURES/SRTMGL1.003/2000.02.11/N42W123.SRTMGL1.2.jpg
-# https://e4ftl01.cr.usgs.gov/MEASURES/SRTMGL1.003/2000.02.11/N42W123.SRTMGL1.2.jpg
-# from 42 N to 43 N, 123 W to 122 W
-# https://e4ftl01.cr.usgs.gov/MEASURES/SRTMGL1.003/2000.02.11/N20E012.SRTMGL1.2.jpg
-# https://e4ftl01.cr.usgs.gov/MEASURES/SRTMGL1.003/2000.02.11/S28E133.SRTMGL1.2.jpg
+maxShades = 16777216 # above this many colors in the test tile will not be accepted
 
 # x is 1, y is 2, z is 0
 earthURL = r"http://services.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{0}/{2}/{1}"
@@ -137,8 +133,8 @@ def imgHasContrast(img):
 	if CurrentUnavailImageList is None and shades == urlSpec.get('filterShades'):
 		return None # this number of shades is probably a "tile not available" tile
 	else:
-		print('shades: ', shades)
-		if shades < minShades:
+		# print('shades: ', shades)
+		if shades < minShades or shades > maxShades:
 			return False
 		else:
 			return True
@@ -147,7 +143,7 @@ def imgIsUnavailable(img):
 	if CurrentUnavailImageList is None:
 		return None
 	if list(img.getdata()) == CurrentUnavailImageList:
-		print("unavailable image")
+		# print("unavailable image")
 		return True
 	return False
 
@@ -216,7 +212,7 @@ def getImageCluster(lat_deg, lon_deg, xTileNum, yTileNum, zoom, rotation, xOrder
 	getTiles(tiles)
 	# paste them into the full image
 	Cluster = Image.new('RGB',((xmax-xmin+1)*256-1,(ymax-ymin+1)*256-1))
-	print(xmin, xmax, ymin, ymax, Cluster.size)
+	# print(xmin, xmax, ymin, ymax, Cluster.size)
 	for tile in tiles:
 		xtile = tile.get('x')
 		ytile = tile.get('y')
@@ -235,20 +231,15 @@ def getImageCluster(lat_deg, lon_deg, xTileNum, yTileNum, zoom, rotation, xOrder
 		Cluster.paste(img, box=(boxX*256, boxY*256))
 	return rotateImage(Cluster, rotation)
 
-# create multiplications for correcting an off-white base image
-def determineColorMults(img):
-	redMults, greenMults, blueMults = {}, {}, {}
-	for c in img.getcolors(16777216):
-		rgb = c[1]
-		highestComponent = max(rgb[0], rgb[1], rgb[2])
-		if highestComponent > 0:
-			if rgb[0] > 0:
-				redMults[rgb[0]] = highestComponent / rgb[0]
-			if rgb[1] > 0:
-				greenMults[rgb[1]] = highestComponent / rgb[1]
-			if rgb[2] > 0:
-				blueMults[rgb[2]] = highestComponent / rgb[2]
-	return redMults, greenMults, blueMults
+def image_histogram_equalization(image, number_bins=256):
+    # from http://www.janeriksolem.net/histogram-equalization-with-python-and.html
+    # get image histogram
+    image_histogram, bins = np.histogram(image.flatten(), number_bins, density=True)
+    cdf = image_histogram.cumsum() # cumulative distribution function
+    cdf = 255 * cdf / cdf[-1] # normalize
+    # use linear interpolation of cdf to find new pixel values
+    image_equalized = np.interp(image.flatten(), bins[:-1], cdf)
+    return image_equalized.reshape(image.shape), cdf
 
 def averageImageColor(img):
 	rSum, gSum, bSum = 0, 0, 0
@@ -277,6 +268,21 @@ def gradeFunc(v):
 def gradeAndCorrectFunc(v):
 	return CurrentGrade[max(0, min(255, int(v * CurrentMult)))]
 
+def correctFunc(v):
+	return max(0, min(255, int(v * CurrentMult)))
+
+def correctWhiteBalance(img):
+	global CurrentMult
+	domRGB = dominantImageColor(img)
+	highestComponent = max(*domRGB)
+	CurrentMult = highestComponent / domRGB[0]
+	redImage = Image.eval(img.getchannel('R'), correctFunc)
+	CurrentMult = highestComponent / domRGB[1]
+	greenImage = Image.eval(img.getchannel('G'), correctFunc)
+	CurrentMult = highestComponent / domRGB[2]
+	blueImage = Image.eval(img.getchannel('B'), correctFunc)
+	return Image.merge('RGB', (redImage, greenImage, blueImage))
+
 def colorizeAndCorrectWithInterpolation(img, interpolation):
 	global CurrentGrade, CurrentMult
 	redGrade = [int(interpolation(l/255).red * 255) for l in range(256)]
@@ -295,17 +301,17 @@ def colorizeAndCorrectWithInterpolation(img, interpolation):
 	blueImage = Image.eval(img.getchannel('B'), gradeAndCorrectFunc)
 	return Image.merge('RGB', (redImage, greenImage, blueImage))
 
-def colorizeWithInterpolation(bwImage, interpolation):
+def colorizeWithInterpolation(img, interpolation):
 	global CurrentGrade
 	redGrade = [int(interpolation(l/255).red * 255) for l in range(256)]
 	greenGrade = [int(interpolation(l/255).green * 255) for l in range(256)]
 	blueGrade = [int(interpolation(l/255).blue * 255) for l in range(256)]
 	CurrentGrade = redGrade
-	redImage = Image.eval(bwImage, gradeFunc)
+	redImage = Image.eval(img.getchannel('R'), gradeFunc)
 	CurrentGrade = greenGrade
-	greenImage = Image.eval(bwImage, gradeFunc)
+	greenImage = Image.eval(img.getchannel('G'), gradeFunc)
 	CurrentGrade = blueGrade
-	blueImage = Image.eval(bwImage, gradeFunc)
+	blueImage = Image.eval(img.getchannel('B'), gradeFunc)
 	return Image.merge('RGB', (redImage, greenImage, blueImage))
 
 def hueSwapMaybe(lightnessA, hueA, lightnessB, hueB):
@@ -341,12 +347,12 @@ def findColorPairByDeltaE(startHue, deltaE, lightnessA, lightnessB):
 		if highestDE == None or de > highestDE:
 			highestDE = de
 			highestHues = [hA, hB]
-	print(highestHues, angleDist(highestHues[0], highestHues[1]))
+	# print(highestHues, angleDist(highestHues[0], highestHues[1]))
 	return hueSwapMaybe(lightnessA, highestHues[0], lightnessB, highestHues[1])
 
 def latinOnly(st):
 	if st is None:
-		print("st is None")
+		# print("st is None")
 		return False
 	try:
 		st.encode('latin1')
@@ -439,7 +445,7 @@ if __name__ == '__main__':
 	print("rotation:", rotation)
 	attemptNum = 0
 	a = None
-	while not a and attemptNum < 50:
+	while not a and attemptNum < 100:
 		if attemptNum == 0 and len(sys.argv) > 2:
 			lat, lon = float(sys.argv[1]), float(sys.argv[2])
 		else:
@@ -459,14 +465,23 @@ if __name__ == '__main__':
 					# got image okay but it's too low contrast, choose a new location
 					break
 				break
-		print(*centerLatLon, zoom, rotation)
+		# print(*centerLatLon, zoom, rotation)
+		if a:
+			print(*centerLatLon, zoom, rotation)
 		attemptNum += 1
 	if attemptNum == 50:
 		exit()
 
-	# eqImg = ImageOps.equalize(a)
-	eqImg = ImageOps.autocontrast(a, cutoff=0, ignore=None)
+	eqImg = ImageOps.equalize(a)
+	acImg = ImageOps.autocontrast(a, cutoff=0, ignore=None)
+	uncolorizedImg = Image.blend(eqImg, acImg, 0.5)
+	# print(len(acImg.getcolors(16777216)), "autocontrast")
+	# print(len(eqImg.getcolors(16777216)), "equalized")
+	# print(len(eqImg.convert('L').getcolors(16777216)), "grayscale")
+	# print(len(ImageOps.equalize(eqImg.convert('L')).getcolors(16777216)), "equalized grayscale")
 	# eqImg.save(os.path.expanduser('~/color_out_of_earth/eq.png'))
+	# acImg.save(os.path.expanduser('~/color_out_of_earth/ac.png'))
+	# blendedImg.save(os.path.expanduser('~/color_out_of_earth/blend.png'))
 	# a.save(os.path.expanduser('~/color_out_of_earth/a.png'))
 
 	if useAccentHue == True and sys.platform == 'win32':
@@ -484,18 +499,25 @@ if __name__ == '__main__':
 
 	if randomBackgroundLightness:
 		backgroundLightnessA = random.randint(minBackgroundLightnessA, maxBackgroundLightnessA)
-		backgroundLightnessB = 100 - backgroundLightnessA
+		backgroundLightnessB = lightnessCeiling - backgroundLightnessA
 
 	bgAC, bgBC = findColorPairByDeltaE(hue, backgroundDeltaE, backgroundLightnessA, backgroundLightnessB)
 	# bgAC, bgBC = colorPairByHueDiff(hue, backgroundHueDiff, backgroundLightnessA, backgroundLightnessB)
 	print(bgAC.convert('lch-d65'))
 	print(bgBC.convert('lch-d65'))
-	print("delta e", bgAC.delta_e(bgBC, method='2000'))
+	# print("delta e", bgAC.delta_e(bgBC, method='2000'))
 
 	# colorize image
 	i = bgAC.interpolate(bgBC, space='lch-d65')
 	# i = coloraide.Color('srgb', [0,0,0]).interpolate(coloraide.Color('srgb', [1,1,1]), space='lab-d65') # for testing white balance
-	colorized = colorizeAndCorrectWithInterpolation(eqImg, i)
+	colorized = colorizeAndCorrectWithInterpolation(uncolorizedImg, i)
+	# correctedImg = correctWhiteBalance(uncolorizedImg)
+	# colorized = colorizeWithInterpolation(correctedImg, i)
+	# print(len(a.getcolors(16777216)), "original")
+	# print(len(uncolorizedImg.getcolors(16777216)), "equalized autocontrasted blend")
+	# print(len(correctedImg.getcolors(16777216)), "corrected")
+	# print(len(colorized.getcolors(16777216)), "colorized")
+	# correctedImg.save(os.path.expanduser('~/color_out_of_earth/corrected.png'))
 	# print(averageImageColor(eqImg), dominantImageColor(eqImg))
 	# print(averageImageColor(colorized), dominantImageColor(colorized))
 
