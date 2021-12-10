@@ -13,7 +13,7 @@ import concurrent.futures
 from screeninfo import get_monitors
 
 identifyLocation = True # get a name for the coordinates of the image?
-languageCode = 'en'
+languageCode = 'en' # when identifying location, translate into this language
 backgroundLightnessA = 25
 backgroundLightnessB = 75
 randomBackgroundLightness = True # overrides backgroundLightnessA and backgroundLightnessB, using the min and max below
@@ -21,26 +21,24 @@ minBackgroundLightnessA = 17
 maxBackgroundLightnessA = 33
 lightnessCeiling = 90 # lightnessB will be lightnessCeiling minus the randomly chosen lightnessA
 backgroundDeltaE = 38 # the desired delta e color difference between the two background hues
-useAccentHue = False # use the accent color's hue, if available, otherwise random
+useAccentHue = True # use the accent color's hue, if available, otherwise random
 useAccentMaxChroma = True # limit chroma to the accent color, if available
 maxChroma = 134 # maximum chroma (if not using the accent color's maximum chroma)
 minShades = 5 # how many colors must be in the test tile to be accepted
 maxShades = 16777216 # above this many colors in the test tile will not be accepted
 
-# x is 1, y is 2, z is 0
-earthURL = r"http://services.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{0}/{2}/{1}"
-marsURL = r"https://s3.us-east-2.amazonaws.com/opmmarstiles/hillshade-tiles/{0}/{1}/{2}.png"
+# x is {1}, y is {2}, z is {0}
 xyzURLspecs = [
-	{'url':earthURL, 'name':'Earth',
+	{'name' : 'Earth',
+	'url' : r"http://services.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{0}/{2}/{1}",
 	'minZoom':11, 'maxZoom':13,
 	'xOrder':0, 'yOrder':0,
-	'redMult':1, 'greenMult':0.9961, 'blueMult':0.9856,
 	'filterShades':123}, # exact number of shades in a tile that indicates location should be thrown out
 
-	# {'url':marsURL, 'name':'Mars', 'extraterrestrial':True,
+	# {'name' : 'Mars', 'extraterrestrial' : True,
+	# 'url' : r"https://s3.us-east-2.amazonaws.com/opmmarstiles/hillshade-tiles/{0}/{1}/{2}.png",
 	# 'minZoom':6, 'maxZoom':6,
-	# 'xOrder':0, 'yOrder':1,
-	# 'redMult':1, 'greenMult':1, 'blueMult':1,},
+	# 'xOrder':0, 'yOrder':1},
 ]
 
 CurrentURL = None
@@ -52,7 +50,7 @@ urlSpec = None
 
 degreesPerTheta = 90 / (math.pi / 2)
 
-locStruct = [
+locationNameStructure = [
 		['city', 'locality', 'municipality', 'town', 'village'],
 		['county', 'admin_2', 'subregion'],
 		['state', 'admin_1', 'region', 'territory'],
@@ -131,7 +129,7 @@ def imgHasContrast(img):
 	if colors is None:
 		return None
 	shades = len(colors)
-	if CurrentUnavailImageList is None and shades == urlSpec.get('filterShades'):
+	if CurrentUnavailImageList is None and not urlSpec.get('filterShades') is None and shades == urlSpec.get('filterShades'):
 		return None # this number of shades is probably a "tile not available" tile
 	else:
 		if shades < minShades or shades > maxShades:
@@ -242,17 +240,6 @@ def image_histogram_equalization(image, number_bins=256):
     image_equalized = np.interp(image.flatten(), bins[:-1], cdf)
     return image_equalized.reshape(image.shape), cdf
 
-def averageImageColor(img):
-	rSum, gSum, bSum = 0, 0, 0
-	colors = img.getcolors(16777216)
-	numColors = len(colors)
-	for c in colors:
-		rgb = c[1]
-		rSum += rgb[0]
-		gSum += rgb[1]
-		bSum += rgb[2]
-	return [rSum / numColors, gSum / numColors, bSum / numColors]
-
 def dominantImageColor(img):
 	colors = img.getcolors(16777216)
 	most, mostColor = None, None
@@ -351,34 +338,32 @@ def findColorPairByDeltaE(startHue, deltaE, lightnessA, lightnessB):
 	# print(highestHues, angleDist(highestHues[0], highestHues[1]))
 	return hueSwapMaybe(lightnessA, highestHues[0], lightnessB, highestHues[1])
 
-def latinOnly(st):
-	if st is None:
-		# print("st is None")
-		return False
-	try:
-		st.encode('latin1')
-	except UnicodeEncodeError:
-		return False
-	return True
-
-def nameFromData(s):
+def nameFromData(s, translation):
+	if translation == True:
+		translator = Translator()
 	output = ''
 	if s.get('country') == None and s.get('countrycode') != None:
 		s['country'] = pycountry.countries.get(alpha_3=s.get('countrycode')).name
 	strings = {}
+	haveAnything = False
 	l = 0
-	for level in locStruct:
+	for level in locationNameStructure:
 		l += 1
 		if l == 5 and output != '':
 			break
 		for k in level:
 			v = s.get(k)
 			if not v is None and v != '':
+				if translation == True:
+					transV = translator.translate(v, dest=languageCode)
+					if not transV is None and transV.text != '':
+						v = transV.text
 				if strings.get(v) is None:
-					if l > 1:
+					if haveAnything:
 						output = output + ', '
 					output = output + v
 					strings[v] = True
+					haveAnything = True
 					break
 	if output == '':
 		return None
@@ -386,8 +371,7 @@ def nameFromData(s):
 		return output
 
 def locationName(latLon):
-	s = {}
-	latinS = {}
+	s = {} # data dict
 	for provider in ['arcgis', 'osm', 'geocodefarm']:
 		func = getattr(geocoder, provider)
 		try:
@@ -396,8 +380,6 @@ def locationName(latLon):
 			print("could not get location with", provider)
 		finally:
 			if not g.address is None and g.address != '':
-				if latinOnly(g.address) and latinS.get('address') is None:
-					latinS['address'] = g.address
 				if s.get('address') is None:
 					s['address'] = g.address
 			# print(provider)
@@ -408,15 +390,13 @@ def locationName(latLon):
 					for k in a.keys():
 						address[k.lower()] = a.get(k)
 					# print(address)
-					for level in locStruct:
+					for level in locationNameStructure:
 						for k in level:
 							v = address.get(k)
 							if not v is None and v != '':
 								if s.get(k) is None:
 									s[k] = v
-								if latinS.get(k) is None and latinOnly(v):
-									latinS[k] = v
-	return nameFromData(s), nameFromData(latinS)
+	return nameFromData(s, False), nameFromData(s, True)
 
 
 if __name__ == '__main__':
@@ -511,7 +491,7 @@ if __name__ == '__main__':
 
 	# colorize image
 	i = bgAC.interpolate(bgBC, space='lch-d65')
-	# i = coloraide.Color('srgb', [0,0,0]).interpolate(coloraide.Color('srgb', [1,1,1]), space='lab-d65') # for testing white balance
+	# i = coloraide.Color('srgb', [0,0,0]).interpolate(coloraide.Color('srgb', [1,1,1]), space='srgb') # for testing white balance
 	colorized = colorizeAndCorrectWithInterpolation(blendedImg, i)
 	# correctedImg = correctWhiteBalance(blendedImg)
 	# colorized = colorizeWithInterpolation(correctedImg, i)
@@ -520,8 +500,6 @@ if __name__ == '__main__':
 	# print(len(correctedImg.getcolors(16777216)), "corrected")
 	# print(len(colorized.getcolors(16777216)), "colorized")
 	# correctedImg.save(os.path.expanduser('~/color_out_of_earth/corrected.png'))
-	# print(averageImageColor(eqImg), dominantImageColor(eqImg))
-	# print(averageImageColor(colorized), dominantImageColor(colorized))
 
 	# create path if not existant
 	if not os.path.exists(os.path.expanduser('~/color_out_of_earth')):
@@ -550,19 +528,14 @@ if __name__ == '__main__':
 		import geocoder
 		import pycountry
 		from googletrans import Translator, constants
-		name, latinName = locationName(centerLatLon)
+		name, transName = locationName(centerLatLon)
 		name = name or ''
-		latinName = latinName or ''
-		translator = Translator()
-		transName = translator.translate(name, dest=languageCode).text
-		nameText = name + "\n" + transName
+		transName = transName or ''
+		nameText = name
 		print(name)
-		print(transName)
-		if latinName != name:
-			transLatinName = translator.translate(latinName, dest=languageCode).text
-			nameText = nameText + "\n" + latinName + "\n" + transLatinName
-			print(latinName)
-			print(transLatinName)
+		if name != transName and transName != '':
+			nameText = nameText + "\n" + transName
+			print(transName)
 		fp = open(os.path.expanduser('~/color_out_of_earth/location.txt'), 'w', encoding='utf8')
 		fp.write(nameText + "\n" + argString)
 		fp.close()
