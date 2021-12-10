@@ -1,7 +1,7 @@
 import math
 from urllib.request import urlopen, Request
 from io import BytesIO
-from PIL import Image, ImageOps, ImageFilter
+from PIL import Image, ImageOps
 import sys
 if sys.platform == 'win32':
 	from winreg import *
@@ -13,6 +13,7 @@ import concurrent.futures
 from screeninfo import get_monitors
 
 identifyLocation = True # get a name for the coordinates of the image?
+languageCode = 'en'
 backgroundLightnessA = 25
 backgroundLightnessB = 75
 randomBackgroundLightness = True # overrides backgroundLightnessA and backgroundLightnessB, using the min and max below
@@ -20,10 +21,10 @@ minBackgroundLightnessA = 17
 maxBackgroundLightnessA = 33
 lightnessCeiling = 90 # lightnessB will be lightnessCeiling minus the randomly chosen lightnessA
 backgroundDeltaE = 38 # the desired delta e color difference between the two background hues
-useAccentHue = True # use the accent color's hue, if available, otherwise random
-useAccentMaxChroma = True # limit chroma to the accent color
+useAccentHue = False # use the accent color's hue, if available, otherwise random
+useAccentMaxChroma = True # limit chroma to the accent color, if available
 maxChroma = 134 # maximum chroma (if not using the accent color's maximum chroma)
-minShades = 3 # how many colors must be in the test tile to be accepted
+minShades = 5 # how many colors must be in the test tile to be accepted
 maxShades = 16777216 # above this many colors in the test tile will not be accepted
 
 # x is 1, y is 2, z is 0
@@ -133,10 +134,10 @@ def imgHasContrast(img):
 	if CurrentUnavailImageList is None and shades == urlSpec.get('filterShades'):
 		return None # this number of shades is probably a "tile not available" tile
 	else:
-		# print('shades: ', shades)
 		if shades < minShades or shades > maxShades:
 			return False
 		else:
+			print('test tile shades: ', shades)
 			return True
 
 def imgIsUnavailable(img):
@@ -394,10 +395,11 @@ def locationName(latLon):
 		except:
 			print("could not get location with", provider)
 		finally:
-			if latinOnly(g.address) and latinS.get('address') is None:
-				latinS['address'] = g.address
-			if s.get('address') is None:
-				s['address'] = g.address
+			if not g.address is None and g.address != '':
+				if latinOnly(g.address) and latinS.get('address') is None:
+					latinS['address'] = g.address
+				if s.get('address') is None:
+					s['address'] = g.address
 			# print(provider)
 			if g.raw != None:
 				a = g.raw.get('address') or g.raw.get('ADDRESS')
@@ -467,14 +469,14 @@ if __name__ == '__main__':
 				break
 		# print(*centerLatLon, zoom, rotation)
 		if a:
-			print(*centerLatLon, zoom, rotation)
+			argString = "{} {} {} {}".format(*centerLatLon, zoom, rotation)
 		attemptNum += 1
 	if attemptNum == 50:
 		exit()
 
 	eqImg = ImageOps.equalize(a)
 	acImg = ImageOps.autocontrast(a, cutoff=0, ignore=None)
-	uncolorizedImg = Image.blend(eqImg, acImg, 0.5)
+	blendedImg = Image.blend(eqImg, acImg, 0.5)
 	# print(len(acImg.getcolors(16777216)), "autocontrast")
 	# print(len(eqImg.getcolors(16777216)), "equalized")
 	# print(len(eqImg.convert('L').getcolors(16777216)), "grayscale")
@@ -510,11 +512,11 @@ if __name__ == '__main__':
 	# colorize image
 	i = bgAC.interpolate(bgBC, space='lch-d65')
 	# i = coloraide.Color('srgb', [0,0,0]).interpolate(coloraide.Color('srgb', [1,1,1]), space='lab-d65') # for testing white balance
-	colorized = colorizeAndCorrectWithInterpolation(uncolorizedImg, i)
-	# correctedImg = correctWhiteBalance(uncolorizedImg)
+	colorized = colorizeAndCorrectWithInterpolation(blendedImg, i)
+	# correctedImg = correctWhiteBalance(blendedImg)
 	# colorized = colorizeWithInterpolation(correctedImg, i)
 	# print(len(a.getcolors(16777216)), "original")
-	# print(len(uncolorizedImg.getcolors(16777216)), "equalized autocontrasted blend")
+	# print(len(blendedImg.getcolors(16777216)), "equalized autocontrasted blend")
 	# print(len(correctedImg.getcolors(16777216)), "corrected")
 	# print(len(colorized.getcolors(16777216)), "colorized")
 	# correctedImg.save(os.path.expanduser('~/color_out_of_earth/corrected.png'))
@@ -544,15 +546,24 @@ if __name__ == '__main__':
 		subprocess.run(['rundll32.exe', 'user32.dll,', 'UpdatePerUserSystemParameters'])
 
 	if identifyLocation == True and not urlSpec.get('extraterrestrial'):
+		print(argString)
 		import geocoder
 		import pycountry
+		from googletrans import Translator, constants
 		name, latinName = locationName(centerLatLon)
-		nameText = name or ''
+		name = name or ''
+		latinName = latinName or ''
+		translator = Translator()
+		transName = translator.translate(name, dest=languageCode).text
+		nameText = name + "\n" + transName
 		print(name)
+		print(transName)
 		if latinName != name:
-			nameText = nameText + "\n" + (latinName or '')
+			transLatinName = translator.translate(latinName, dest=languageCode).text
+			nameText = nameText + "\n" + latinName + "\n" + transLatinName
 			print(latinName)
+			print(transLatinName)
 		fp = open(os.path.expanduser('~/color_out_of_earth/location.txt'), 'w', encoding='utf8')
-		fp.write(nameText)
+		fp.write(nameText + "\n" + argString)
 		fp.close()
 		print(os.path.expanduser('~/color_out_of_earth/location.txt'), 'saved')
