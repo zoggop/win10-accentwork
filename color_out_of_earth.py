@@ -85,7 +85,7 @@ def highestChromaColor(lightness, hue):
 		chromaStep = 1
 	chroma = maxChroma
 	iteration = 0
-	while iteration < 35:
+	while iteration < 45:
 		c = lch_to_rgb(lightness, chroma, hue)
 		if not c is None:
 			if chromaStep == 0.01 or maxChroma == 0:
@@ -249,6 +249,7 @@ def colorizeAndCorrectWithInterpolation(img, interpolation):
 	greenGrade = [int(interpolation(l/255).green * 255) for l in range(256)]
 	blueGrade = [int(interpolation(l/255).blue * 255) for l in range(256)]
 	domRGB = dominantImageColor(img)
+	# print("dominant RGB:", domRGB)
 	highestComponent = max(*domRGB)
 	CurrentGrade = redGrade
 	CurrentMult = highestComponent / domRGB[0]
