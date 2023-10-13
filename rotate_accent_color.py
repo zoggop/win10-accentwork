@@ -6,7 +6,7 @@ import os
 import random
 import math
 
-maxChroma = 0.32 # chroma of pure blue is 0.313
+maxChroma = 0.322
 randomMaxChroma = True
 minMaxChroma = 0.01
 
@@ -23,8 +23,7 @@ def rgb_to_lch(red, green, blue):
 		return c
 	return None
 
-def highestChromaColor(lightness, hue, stepStop=3):
-	stepStop = 1 / (10 ** stepStop)
+def highestChromaColor(lightness, hue, maxChroma=0.4):
 	chromaStep = 0.1
 	if maxChroma < 0.1:
 		chromaStep = 0.01
@@ -33,7 +32,7 @@ def highestChromaColor(lightness, hue, stepStop=3):
 	while iteration < 45:
 		c = lch_to_rgb(lightness, chroma, hue)
 		if not c is None:
-			if chromaStep == stepStop or maxChroma == 0:
+			if chromaStep == 0.0001 or maxChroma == 0 or iteration == 0:
 				return c
 			else:
 				chroma += chromaStep
@@ -54,21 +53,6 @@ def intDwordColorToRGB(dwordInt):
 	b = int('0x' + reverse[4:6], 16)
 	return [r, g, b]
 
-def nextHueByDeltaE(lchColor, deltaEAdd, negative):
-	for hueAdd in range(1, 180):
-		if negative == True:
-			newHue = lchColor.h - hueAdd
-			if newHue < 0:
-				newHue = newHue + 360
-		else:
-			newHue = lchColor.h + hueAdd
-			if newHue > 360:
-				newHue = newHue - 360
-		newC = highestChromaColor(lchColor.l, newHue)
-		deltaE = lchColor.delta_e(newC, method='2000')
-		if deltaE >= deltaEAdd:
-			return lchColor.h + hueAdd
-
 lightnessMin = 0.25
 lightnessMax = 0.85
 l = lightnessMax
@@ -80,30 +64,29 @@ for n in range(0, 7):
 # print(lightnessPoints)
 
 hue = 0
-if randomMaxChroma == True:
+
+if len(sys.argv) > 2:
+	maxChroma = float(sys.argv[2])
+elif randomMaxChroma == True:
 	maxChroma = random.uniform(minMaxChroma, maxChroma)
 print('maxChroma:', maxChroma)
 
 if len(sys.argv) < 2:
-	exit();
-arg = sys.argv[1]
-
-if arg[:1] == '+' or arg[:1] == '-':
-	deltaEAdd = int(arg[1:])
-	negative = False
-	if arg[:1] == '-':
-		negative = True
-	# get current accent color
-	key = OpenKey(HKEY_CURRENT_USER, r'SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Accent', 0, KEY_ALL_ACCESS)
-	val = QueryValueEx(key, "AccentColorMenu")
-	rgbVal = intDwordColorToRGB(val[0])
-	lchC = rgb_to_lch(rgbVal[0], rgbVal[1], rgbVal[2])
-	if deltaEAdd == 0:
-		hue = lchC.h
-	else:
-		hue = nextHueByDeltaE(lchC, deltaEAdd, negative)
+	hue = random.uniform(0, 359)
 else:
-	hue = float(arg)
+	arg = sys.argv[1]
+	if arg[:1] == '+' or arg[:1] == '-':
+		hueAdd = float(arg[1:])
+		if arg[:1] == '-':
+			hueAdd = (0 - hueAdd) % 360
+		# get current accent color
+		key = OpenKey(HKEY_CURRENT_USER, r'SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Accent', 0, KEY_ALL_ACCESS)
+		val = QueryValueEx(key, "AccentColorMenu")
+		rgbVal = intDwordColorToRGB(val[0])
+		lchC = rgb_to_lch(rgbVal[0], rgbVal[1], rgbVal[2])
+		hue = lchC.h + hueAdd
+	else:
+		hue = float(arg)
 
 print('hue:', '{:.2f}'.format(hue))
 
@@ -111,12 +94,12 @@ hexStrings = []
 
 startDT = datetime.datetime.now()
 for lightness in lightnessPoints:
-	rgbC = highestChromaColor(lightness, hue)
+	rgbC = highestChromaColor(lightness, hue, maxChroma)
 	hs = rgbC.to_string(hex=True)[1:]
 	print(hs, 'lightness:', '{:.3f}'.format(lightness), 'chroma:', '{:.3f}'.format(rgbC.convert('oklch').c))
 	hexStrings.append(hs)
-weirdHue = ((hue + 180) % 360) + 1
-weirdRGBC = highestChromaColor(0.5, weirdHue)
+weirdHue = ((hue + 180) % 360)
+weirdRGBC = highestChromaColor(0.5, weirdHue, maxChroma)
 hexStrings.append(weirdRGBC.to_string(hex=True)[1:])
 print('found colors in', datetime.datetime.now() - startDT)
 
