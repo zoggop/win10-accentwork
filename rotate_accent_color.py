@@ -84,7 +84,7 @@ else:
 		val = QueryValueEx(key, "AccentColorMenu")
 		rgbVal = intDwordColorToRGB(val[0])
 		lchC = rgb_to_lch(rgbVal[0], rgbVal[1], rgbVal[2])
-		hue = lchC.h + hueAdd
+		hue = lchC['h'] + hueAdd
 	else:
 		hue = float(arg)
 
@@ -96,7 +96,7 @@ startDT = datetime.datetime.now()
 for lightness in lightnessPoints:
 	rgbC = highestChromaColor(lightness, hue, maxChroma)
 	hs = rgbC.to_string(hex=True)[1:]
-	print(hs, 'lightness:', '{:.3f}'.format(lightness), 'chroma:', '{:.3f}'.format(rgbC.convert('oklch').c))
+	print(hs, 'lightness:', '{:.3f}'.format(lightness), 'chroma:', '{:.3f}'.format(rgbC.convert('oklch')['c']))
 	hexStrings.append(hs)
 weirdHue = ((hue + 180) % 360)
 weirdRGBC = highestChromaColor(0.5, weirdHue, maxChroma)

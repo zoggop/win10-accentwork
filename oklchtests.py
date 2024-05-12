@@ -1,7 +1,7 @@
 import coloraide
 import random
 
-for l in range(5, 95, 5):
+for l in range(5, 100, 5):
 	c = coloraide.Color('lch-d65', [l, 0, 0]).convert('oklch')
 	print(l, c.l)
 
