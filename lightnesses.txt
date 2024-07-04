@@ -1,0 +1,13 @@
+0.2602 start's context menus
+0.3729 taskbar
+0.4611 UWP dialogs background (windows 8.1 remnants)
+0.5697 settings icons, links, & some pressed buttons
+0.6705 start menu icon hover
+0.7611 taskbar app underline
+0.8608 action center links
+
+
+0.6800 undefined (oppositeland)
+
+0.4611 start menu & action center
+0.5697 active titlebar

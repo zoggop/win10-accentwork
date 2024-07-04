@@ -53,8 +53,8 @@ def intDwordColorToRGB(dwordInt):
 	b = int('0x' + reverse[4:6], 16)
 	return [r, g, b]
 
-lightnessMin = 0.25
-lightnessMax = 0.85
+lightnessMin = 0.26
+lightnessMax = 0.86
 l = lightnessMax
 lStep = (lightnessMax - lightnessMin) / 6
 lightnessPoints = []
@@ -99,7 +99,7 @@ for lightness in lightnessPoints:
 	print(hs, 'lightness:', '{:.3f}'.format(lightness), 'chroma:', '{:.3f}'.format(rgbC.convert('oklch')['c']))
 	hexStrings.append(hs)
 weirdHue = ((hue + 180) % 360)
-weirdRGBC = highestChromaColor(0.5, weirdHue, maxChroma)
+weirdRGBC = highestChromaColor(0.68, weirdHue, maxChroma)
 hexStrings.append(weirdRGBC.to_string(hex=True)[1:])
 print('found colors in', datetime.datetime.now() - startDT)
 
